@@ -176,6 +176,7 @@ const resampleOhlcvArray = (candledata: OHLCV[],
  * @param time 
  * @param ticks 
  */
+
 const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
   const prices = ticks.map(tick => Number(tick.price));
   const volume = _.sum(ticks.map(tick => Number(tick.quantity))) || 0;

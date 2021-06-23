@@ -103,7 +103,7 @@ const link_btc_1m = [
 const baseTimeframe = 60; // 60 seconds
 const newTimeframe = 120; // 120 seconds
 
-// Resample to 2m Candles
+// Candles made up of ticks within 2 minute timeframes
 
 const link_btc_2m = resampleOhlcv(link_btc_1m, {
   baseTimeframe,
@@ -139,7 +139,6 @@ const adabnb_trades = [
     tradeId: "1221274"
   }];
 
-
 const filtered_adabnb_trades: TradeTick[] = adabnb_trades.map((trade: any) => ({
   time: Number(trade.time),
   quantity: Number(trade.quantity),
@@ -148,7 +147,6 @@ const filtered_adabnb_trades: TradeTick[] = adabnb_trades.map((trade: any) => ({
 
 // Candles made up of two ticks
 
-const batchSize = 2; // Every TickCandle consist 2 trade
 const tickChart = (filtered_adabnb_trades, {
   tickCount: 2
 });
