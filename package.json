@@ -1,7 +1,7 @@
 {
   "name": "ohlc-resample",
   "version": "1.0.0",
-  "description": "Price ticks and OHLC resampler with typings",
+  "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames",
   "main": "build/index.js",
   "scripts": {
     "prebuild": "rimraf build",
@@ -14,6 +14,7 @@
   "keywords": [
     "ohlc",
     "ohlcv",
+    "resample",
     "tickchart",
     "candlestick",
     "ccxt",
@@ -26,7 +27,7 @@
     "url": "git+https://github.com/m-adilshaikh/ohlc-resample"
   },
   "author": "Muhammad Adil Shaikh <hello@adils.me> (http://www.adils.me)",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/m-adilshaikh/ohlc-resample/issues"
   },

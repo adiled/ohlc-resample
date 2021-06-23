@@ -28,7 +28,7 @@ npm install --save ohlc-resample
 
 #### Reference
 
-```javascript
+```typescript
 import { resampleOhlcv, resampleTicksByTime, resampleTicksByCount } from "ohlc-resample";
 
 // OHLCV resampled from 1 minute to 5 minute
@@ -47,7 +47,7 @@ resampleTicksByCount(tickData as TradeTick[], { tickCount: 5 }) // return IOHLCV
 ```
 
 #### Types
-```javascript
+```typescript
 export type IOHLCV = {
   time: number;
   open: number;
@@ -79,7 +79,7 @@ export type TradeTick = {
 
 **Resample CCXT (Object) OHLCV based on timeframe**
 
-```javascript
+```typescript
 import { resampleOhlcv } from "ohlc-resample";
 
 const link_btc_1m = [
@@ -113,7 +113,7 @@ const link_btc_2m = resampleOhlcv(link_btc_1m, {
 
 **Resample ticks to OHLCV based on tick count**
 
-```javascript
+```typescript
 import { ticksToTickChart, TradeTick } from "ohlc-resample";
 
 const adabnb_trades = [
