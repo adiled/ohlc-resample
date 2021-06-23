@@ -23,20 +23,24 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/valamidev/candlestick-convert.git"
+    "url": "git+https://github.com/m-adilshaikh/ohlc-convert"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/valamidev/candlestick-convert/issues"
+    "url": "https://github.com/m-adilshaikh/ohlc-convert/issues"
   },
-  "homepage": "https://github.com/valamidev/candlestick-convert#readme",
+  "homepage": "https://github.com/m-adilshaikh/ohlc-convert#readme",
   "devDependencies": {
     "@types/jest": "^25.1.2",
+    "@types/lodash": "^4.14.170",
     "coveralls": "^3.1.0",
     "jest": ">=25.0.0",
     "rimraf": "^3.0.2",
     "ts-jest": ">=25.1.0",
     "typescript": "^3.7.5"
+  },
+  "dependencies": {
+    "lodash": "^4.17.21"
   }
 }
