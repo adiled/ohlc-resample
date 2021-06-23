@@ -33,8 +33,8 @@ import { resampleOhlcv, resampleTicksByTime, resampleTicksByCount } from "ohlc-r
 
 // OHLCV resampled from 1 minute to 5 minute
 
-resampleOhlcv(ohlcvData as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return IOHLCV[]
-resampleOhlcv(ohlcvData as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return OHLCV[]
+resampleOhlcv(objectOhlcv as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return IOHLCV[]
+resampleOhlcv(arrayOhlcv as OHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return OHLCV[]
 
 // Ticks grouped and resampled to 1m OHCLV
 
