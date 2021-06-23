@@ -17,24 +17,32 @@ This package allow you to batch resample OHLCV candlesticks or create them from 
 - Typescript support
 - CCXT support
 - Single dependency
-- Less time complex grouping based aggregations
+- Low time complexity grouping based aggregations
 - Skip missing candles
 
 #### Install
 
 ```
-npm install ohlc-resample
+npm install --save ohlc-resample
 ```
 
-#### Available functions:
+#### Reference
 
 ```javascript
-import { batchCandleArray, batchCandleJSON, batchTicksToCandle, ticksToTickChart } from "ohlc-resample";
+import { resampleOhlcv, resampleTicksByTime, resampleTicksByCount } from "ohlc-resample";
 
-batchCandleArray(candledata: OHLCV[], 60, 300) // return OHLCV[]
-batchCandleJSON(candledata: IOHLCV [], 60, 300) // return IOHLCV[]
-batchTicksToCandle(tradedata: TradeTick[], 60) // return IOHLCV[]
-ticksToTickChart(tradedata: TradeTick[], 5) // return IOHLCV[]
+// OHLCV resampled from 1 minute to 5 minute
+
+resampleOhlcv(ohlcvData as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return IOHLCV[]
+resampleOhlcv(ohlcvData as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return OHLCV[]
+
+// Ticks grouped and resampled to 1m OHCLV
+
+resampleTicksByTime(tickData as TradeTick[], { timeframe: 60 }) // return IOHLCV[]
+
+// Ticks grouped and resampled by every 5 ticks
+
+resampleTicksByCount(tickData as TradeTick[], { tickCount: 5 }) // return IOHLCV[]
 
 ```
 
@@ -65,12 +73,14 @@ export type TradeTick = {
 }
 ```
 
+**Note:** Input time for all above types must be in milliseconds
+
 ## Examples
 
 **Resample CCXT (Object) OHLCV based on timeframe**
 
 ```javascript
-import { batchCandleJSON } from "ohlc-resample";
+import { resampleOhlcv } from "ohlc-resample";
 
 const link_btc_1m = [
   {
@@ -90,15 +100,18 @@ const link_btc_1m = [
     volume: 3145
   }];
 
-const baseFrame = 60; // 60 seconds
-const newFrame = 120; // 120 seconds
+const baseTimeframe = 60; // 60 seconds
+const newTimeframe = 120; // 120 seconds
 
-// Convert to 2m Candles
+// Resample to 2m Candles
 
-const link_btc_2m = batchCandleJSON(link_btc_1m, baseFrame, newFrame);
+const link_btc_2m = resampleOhlcv(link_btc_1m, {
+  baseTimeframe,
+  newTimeframe
+});
 ```
 
-**Resample ticks to OHLCV based on chunks**
+**Resample ticks to OHLCV based on tick count**
 
 ```javascript
 import { ticksToTickChart, TradeTick } from "ohlc-resample";
@@ -128,11 +141,15 @@ const adabnb_trades = [
 
 
 const filtered_adabnb_trades: TradeTick[] = adabnb_trades.map((trade: any) => ({
-  time: trade.time,
-  quantity: trade.quantity,
-  price: trade.price
+  time: Number(trade.time),
+  quantity: Number(trade.quantity),
+  price: Number(trade.price)
 }));
 
+// Candles made up of two ticks
+
 const batchSize = 2; // Every TickCandle consist 2 trade
-const tickChart = ticksToTickChart(filtered_adabnb_trades, batchSize);
+const tickChart = (filtered_adabnb_trades, {
+  tickCount: 2
+});
 ```
