@@ -1,20 +1,18 @@
-Single dependency fork of `candlestick-convert` that covers edge cases.
+Improvement fork of `candlestick-convert` covering edge cases.
 
-# ohlc-convert
+# ohlc-resample
 
-[![Coverage Status](https://coveralls.io/repos/github/valamidev/candlestick-convert/badge.svg?branch=master)](https://coveralls.io/github/valamidev/candlestick-convert?branch=master)
-[![DeepScan grade](https://deepscan.io/api/teams/6761/projects/8875/branches/113561/badge/grade.svg)](https://deepscan.io/dashboard#view=project&tid=6761&pid=8875&bid=113561)
-![npm](https://img.shields.io/npm/dy/candlestick-convert)
+This package allow you to batch resample OHLCV candlesticks or create them from trade (tick) data sets.
 
-This package allow you to batch OHLCV candlesticks or creating them from trade(tick) data sets.
+[![Coverage Status](https://coveralls.io/repos/github/m-adilshaikh/ohlc-resample/badge.svg?branch=master)](https://coveralls.io/github/m-adilshaikh/ohlc-resample?branch=master)
 
-#### Supported formats:
+#### Supported formats
 
 - OHLCV (CCXT format) `[[time,open,high,low,close,volume]]`
 - OHLCV JSON `[{time: number, open: number, high: number, low: number close: number, volume: number}]`
 - Trade JSON `[{time: number, price: number, quantity: number}]`
 
-#### Features:
+#### Features
 
 - Typescript support
 - CCXT support
@@ -22,20 +20,16 @@ This package allow you to batch OHLCV candlesticks or creating them from trade(t
 - Less time complex grouping based aggregations
 - Skip missing candles
 
-#### Important!:
-
-- Intervals only supported as second integers (1 minute = 60 , 2 minute = 120...)
-- Only positive integer multiplication allowed between base interval and the new interval. e.g. 60->120, 60->180
-
-#### Install:
+#### Install
 
 ```
-npm install ohlc-convert
+npm install ohlc-resample
 ```
 
 #### Available functions:
+
 ```javascript
-import { batchCandleArray, batchCandleJSON, batchTicksToCandle, ticksToTickChart } from "ohlc-convert";
+import { batchCandleArray, batchCandleJSON, batchTicksToCandle, ticksToTickChart } from "ohlc-resample";
 
 batchCandleArray(candledata: OHLCV[], 60, 300) // return OHLCV[]
 batchCandleJSON(candledata: IOHLCV [], 60, 300) // return IOHLCV[]
@@ -70,7 +64,6 @@ export type TradeTick = {
   time: number;
 }
 ```
-
 
 ## Examples
 

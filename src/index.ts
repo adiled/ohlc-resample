@@ -132,7 +132,6 @@ export const batchCandleArray = (candledata: OHLCV[],
 
 }
 
-
 export const batchCandleJSON = (candledata: IOHLCV[], baseFrame = 60, newFrame = 300): IOHLCV[] => {
 
   const ohlcvArray: OHLCV[] = candledata.map(e => [e.time,e.open,e.high,e.low,e.close,e.volume]);
@@ -162,6 +161,13 @@ const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
   }
 }
 
+/**
+ * Convert ticks for candles grouped by intervals in seconds
+ * @param tradedata 
+ * @param interval 
+ * @param includeOpenCandle 
+ */
+
 export const batchTicksToCandle = (tradedata: Trade[], interval: number = 60, includeOpenCandle = false): IOHLCV[] => {
   interval *= Math.floor(1000);
   const tickGroups = _.groupBy(tradedata, (tick) => tick.time - (tick.time % interval));
@@ -177,6 +183,12 @@ export const batchTicksToCandle = (tradedata: Trade[], interval: number = 60, in
   }
   return sortedCandles;
 }
+
+/**
+ * Covert ticks to candles by linear groups
+ * @param tradedata 
+ * @param tickSize 
+ */
 
 export const ticksToTickChart = (tradedata: Trade[], tickSize: number = 5): IOHLCV[] => {
   if (tickSize < 1) {
