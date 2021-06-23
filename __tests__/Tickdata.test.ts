@@ -14,7 +14,7 @@ const adabnb_trades = [
     time: "1564503133949",
     side: "sell",
     quantity: "3480",
-    price: "0.002242",
+    price: "0.002242", 
     tradeId: "1221273"
   },
   {
@@ -390,7 +390,7 @@ test("Trades convert to Candlestick", () => {
     high: 0.00224,
     low: 0.00224,
     close: 0.00224,
-    volume: 8916
+    volume: 4458
   });
 
   // 27 candles, without open (unfinished) candle

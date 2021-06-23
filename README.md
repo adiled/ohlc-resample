@@ -1,4 +1,6 @@
-# candlestick-convert
+Single dependency fork of `candlestick-convert` that covers edge cases.
+
+# ohlc-convert
 
 [![Coverage Status](https://coveralls.io/repos/github/valamidev/candlestick-convert/badge.svg?branch=master)](https://coveralls.io/github/valamidev/candlestick-convert?branch=master)
 [![DeepScan grade](https://deepscan.io/api/teams/6761/projects/8875/branches/113561/badge/grade.svg)](https://deepscan.io/dashboard#view=project&tid=6761&pid=8875&bid=113561)
@@ -9,15 +11,15 @@ This package allow you to batch OHLCV candlesticks or creating them from trade(t
 #### Supported formats:
 
 - OHLCV (CCXT format) `[[time,open,high,low,close,volume]]`
-- OHLCV JSON `[{time: number,open: number, high: number, low: number close: number, volume: number}]`
-- Trade JSON `[{price: number, quantity: number, time:number}]`
+- OHLCV JSON `[{time: number, open: number, high: number, low: number close: number, volume: number}]`
+- Trade JSON `[{time: number, price: number, quantity: number}]`
 
 #### Features:
 
-- Typescript support!
+- Typescript support
 - CCXT support
-- No Dependencies
-- Performance single loop used
+- Single dependency
+- Less time complex grouping based aggregations
 - Skip missing candles
 
 #### Important!:
@@ -28,12 +30,12 @@ This package allow you to batch OHLCV candlesticks or creating them from trade(t
 #### Install:
 
 ```
-npm install candlestick-convert
+npm install ohlc-convert
 ```
 
 #### Available functions:
 ```javascript
-import {batchCandleArray, batchCandleJSON, batchTicksToCandle, ticksToTickChart} from "candlestick-convert";
+import { batchCandleArray, batchCandleJSON, batchTicksToCandle, ticksToTickChart } from "ohlc-convert";
 
 batchCandleArray(candledata: OHLCV[], 60, 300) // return OHLCV[]
 batchCandleJSON(candledata: IOHLCV [], 60, 300) // return IOHLCV[]
@@ -75,7 +77,7 @@ export type TradeTick = {
 **CCXT OHLCV:**
 
 ```javascript
-import {batchCandleJSON} from "candlestick-convert";
+import { batchCandleJSON } from "ohlc-convert";
 
 const link_btc_1m = [
   {
@@ -106,7 +108,7 @@ const link_btc_2m = batchCandleJSON(link_btc_1m, baseFrame, newFrame);
 **Tick Chart:**
 
 ```javascript
-import {ticksToTickChart, TradeTick} from "candlestick-convert";
+import { ticksToTickChart, TradeTick } from "ohlc-convert";
 
 const adabnb_trades = [
   {
