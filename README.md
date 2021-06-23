@@ -67,10 +67,10 @@ export type TradeTick = {
 
 ## Examples
 
-**CCXT OHLCV:**
+**Resample CCXT (Object) OHLCV based on timeframe**
 
 ```javascript
-import { batchCandleJSON } from "ohlc-convert";
+import { batchCandleJSON } from "ohlc-resample";
 
 const link_btc_1m = [
   {
@@ -98,10 +98,10 @@ const newFrame = 120; // 120 seconds
 const link_btc_2m = batchCandleJSON(link_btc_1m, baseFrame, newFrame);
 ```
 
-**Tick Chart:**
+**Resample ticks to OHLCV based on chunks**
 
 ```javascript
-import { ticksToTickChart, TradeTick } from "ohlc-convert";
+import { ticksToTickChart, TradeTick } from "ohlc-resample";
 
 const adabnb_trades = [
   {

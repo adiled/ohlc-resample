@@ -369,7 +369,9 @@ const filtered_adabnb_trades: Trade[] = adabnb_trades.map((trade: any) => ({
 }));
 
 test("Tick Chart Convert 5 tick", () => {
-  let result = Converter.tick_chart(filtered_adabnb_trades, 5);
+  let result = Converter.tick_chart(filtered_adabnb_trades, {
+    tickCount: 5
+  });
 
   expect(result[0]).toEqual({
     time: 1564503137490,
@@ -381,8 +383,10 @@ test("Tick Chart Convert 5 tick", () => {
   });
 });
 
-test("Trades convert to Candlestick", () => {
-  let result = Converter.trade_to_candle(filtered_adabnb_trades, 60);
+test("Resample ticks / trades to OHLCV", () => {
+  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+    timeframe: 60,
+  });
 
   expect(result[0]).toEqual({
     time: 1564502580000, // 2019-07-30T16:03:00.000Z
@@ -399,8 +403,11 @@ test("Trades convert to Candlestick", () => {
   expect(result[26].time).toEqual(1564509540000); // 2019-07-30T17:59:00.000Z
 });
 
-test("Trades convert to Candlestick – including open candle", () => {
-  let result = Converter.trade_to_candle(filtered_adabnb_trades, 60, true);
+test("Resample ticks / trades to OHLCV – including open candle", () => {
+  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+    timeframe: 60,
+    includeLatestCandle: true
+  });
 
   // 27+1 candles, including open (unfinished) candle
   expect(result.length).toBe(28);
