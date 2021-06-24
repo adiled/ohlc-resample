@@ -1,9 +1,11 @@
 {
   "name": "ohlc-resample",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames",
   "main": "dist/index.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "prebuild": "rimraf build",
     "build": "tsc --build",
