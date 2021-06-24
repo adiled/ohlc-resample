@@ -18,7 +18,7 @@ This package allow you to batch resample OHLCV candlesticks or create them from 
 - CCXT support
 - Single dependency
 - Low time complexity grouping based aggregations
-- Skip missing candles
+- Optional gap filling
 
 #### Install
 
@@ -38,8 +38,13 @@ resampleOhlcv(arrayOhlcv as OHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) 
 
 // Ticks grouped and resampled to 1m OHCLV
 // option.includeLatestCandle is by default `true`
+// options.fillGaps is by default `false`
 
-resampleTicksByTime(tickData as TradeTick[], { timeframe: 60, includeLatestCandle: false }) // return IOHLCV[]
+resampleTicksByTime(tickData as TradeTick[], {
+  timeframe: 60,
+  includeLatestCandle: false,
+  fillGaps: true
+  }) // return IOHLCV[]
 
 // Ticks grouped and resampled by every 5 ticks
 

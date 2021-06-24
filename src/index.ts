@@ -1,4 +1,4 @@
-import _ from "lodash";
+import _, { fill } from "lodash";
 
 export type IOHLCV = {
   time: number;
@@ -193,6 +193,37 @@ const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
 }
 
 /**
+ * Make gap candles from boundary candles if needed
+ * @param lastCandle 
+ * @param nextCandle 
+ * @param options
+ * @param options.method
+ * @param options.msTimeframe
+ */
+
+const makeGapCandles = (
+  lastCandle: IOHLCV,
+  nextCandle: IOHLCV,
+  { method, msTimeframe } : {method?: string, msTimeframe: number }
+  ) : IOHLCV[] => {
+  const gapCandles = [];
+  const intervalGap = (nextCandle.time - lastCandle.time - msTimeframe) / msTimeframe;
+  if(intervalGap > 0 && lastCandle && nextCandle) {
+    for(let i = 1; i <= intervalGap; i++) {
+      gapCandles.push({
+        time: lastCandle.time + (i*msTimeframe),
+        open: lastCandle.close,
+        high: lastCandle.close,
+        low: lastCandle.close,
+        close: lastCandle.close,
+        volume: 0
+      });
+    }
+  }
+  return gapCandles;
+}
+
+/**
  * Convert ticks for candles grouped by intervals in seconds or tick count
  * @param tradedata 
  * @param options
@@ -202,7 +233,8 @@ const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
 
 export const resampleTicksByTime = (
   tickData: Trade[],
-  { timeframe = 60, includeLatestCandle = true } : { timeframe?: number, includeLatestCandle?: boolean } = {}
+  { timeframe = 60, includeLatestCandle = true, fillGaps = false } :
+  { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean } = {}
   ): IOHLCV[] => {
 
     timeframe *= Math.floor(1000);
@@ -210,7 +242,12 @@ export const resampleTicksByTime = (
     const candles: IOHLCV[] = [];
     Object.keys(tickGroups).forEach(timeOpen => {
       const ticks = tickGroups[timeOpen];
-      candles.push(tickGroupToOhlcv(Number(timeOpen), ticks));
+      const candle = tickGroupToOhlcv(Number(timeOpen), ticks);
+      if(fillGaps && candles.length) {
+        const lastCandle = candles[candles.length - 1];
+        candles.push(...makeGapCandles(lastCandle, candle, { msTimeframe: timeframe }));
+      }
+      candles.push(candle);
     });
     const sortedCandles = _.sortBy(candles, (candle) => candle.time);
 

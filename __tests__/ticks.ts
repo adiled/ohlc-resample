@@ -406,12 +406,31 @@ test("Resample ticks / trades to OHLCV", () => {
 
 test("Resample ticks / trades to OHLCV – including open candle", () => {
   let result = Converter.trade_to_candle(filtered_adabnb_trades, {
-    timeframe: 60,
-    includeLatestCandle: true
+    timeframe: 60
   });
 
   // 27+1 candles, including open (unfinished) candle
   expect(result.length).toBe(28);
 
   expect(result[27].time).toEqual(1564509780000); // 2019-07-30T18:03:00.000Z
+});
+
+test("Resample ticks / trades to OHLCV - with gaps filled", () => {
+  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+    timeframe: 60,
+    fillGaps: true
+  });
+
+  const first = result[0];
+
+  // 2 hours + 1 minute candles, including open (unfinished) candle
+  expect(result.length).toBe(121);
+  expect(result[2]).toEqual({
+    time: first.time + (60*1000*2),
+    open: first.close,
+    high: first.close,
+    low: first.close,
+    close: first.close,
+    volume: 0
+  });
 });
