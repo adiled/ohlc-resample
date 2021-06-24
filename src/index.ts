@@ -37,8 +37,10 @@ export type Trade = TradeTick;
 
  /**
  * Resample OHLCV to different timeframe
-  * @param ohlcvData 
-  * @param param1 
+  * @param ohlcvData
+  * @param options 
+  * @param options.baseTimeframe 
+  * @param options.newTimeframe
   */
 
 export const resampleOhlcv = (
@@ -69,9 +71,9 @@ export const resampleOhlcv = (
 
 /**
  * Resample OHLCV in object format to different timeframe
- * @param candledata 
- * @param baseFrame 
- * @param newFrame 
+ * @param candledata
+ * @param baseFrame
+ * @param newFrame
  */
 
 const resampleOhlcvArray = (candledata: OHLCV[],
@@ -221,7 +223,8 @@ export const resampleTicksByTime = (
 /**
  * Covert ticks to candles by linear groups
  * @param tradedata 
- * @param tickSize 
+ * @param options 
+ * @param options.tickCount
  */
 
 export const resampleTicksByCount = (tickData: Trade[],

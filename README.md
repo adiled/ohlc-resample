@@ -114,7 +114,7 @@ const link_btc_2m = resampleOhlcv(link_btc_1m, {
 **Resample ticks to OHLCV based on tick count**
 
 ```typescript
-import { ticksToTickChart, TradeTick } from "ohlc-resample";
+import { resampleTicksByCount, TradeTick } from "ohlc-resample";
 
 const adabnb_trades = [
   {
@@ -139,7 +139,7 @@ const adabnb_trades = [
     tradeId: "1221274"
   }];
 
-const filtered_adabnb_trades: TradeTick[] = adabnb_trades.map((trade: any) => ({
+const airbnb_ticks: TradeTick[] = adabnb_trades.map((trade: any) => ({
   time: Number(trade.time),
   quantity: Number(trade.quantity),
   price: Number(trade.price)
@@ -147,7 +147,7 @@ const filtered_adabnb_trades: TradeTick[] = adabnb_trades.map((trade: any) => ({
 
 // Candles made up of two ticks
 
-const tickChart = (filtered_adabnb_trades, {
+const tickChart = resampleTicksByCount(airbnb_ticks, {
   tickCount: 2
 });
 ```

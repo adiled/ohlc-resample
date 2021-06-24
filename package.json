@@ -2,11 +2,12 @@
   "name": "ohlc-resample",
   "version": "1.0.0",
   "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames",
-  "main": "build/index.js",
+  "main": "dist/index.js",
+  "files": ["dist"],
   "scripts": {
     "prebuild": "rimraf build",
     "build": "tsc --build",
-    "build:check": "node -e \"require('./build')\"",
+    "build:check": "node -e \"require('./dist')\"",
     "prepublishOnly": "npm test && npm run build && npm run coveralls && npm run build && npm run build:check",
     "test": "jest",
     "coveralls": "jest --coverage --coverageReporters=text-lcov | coveralls"
