@@ -386,6 +386,7 @@ test("Tick Chart Convert 5 tick", () => {
 test("Resample ticks / trades to OHLCV", () => {
   let result = Converter.trade_to_candle(filtered_adabnb_trades, {
     timeframe: 60,
+    includeLatestCandle: false
   });
 
   expect(result[0]).toEqual({
