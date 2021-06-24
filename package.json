@@ -29,8 +29,8 @@
     "type": "git",
     "url": "git+https://github.com/m-adilshaikh/ohlc-resample"
   },
-  "author": "Muhammad Adil Shaikh <hello@adils.me> (http://www.adils.me)",
-  "license": "MIT",
+  "author": "Adil Shaikh <hello@adils.me> (http://www.adils.me)",
+  "license": "ISC",
   "bugs": {
     "url": "https://github.com/m-adilshaikh/ohlc-resample/issues"
   },
