@@ -202,7 +202,7 @@ const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
 
 export const resampleTicksByTime = (
   tickData: Trade[],
-  { timeframe = 60, includeLatestCandle = false } : { timeframe?: number, includeLatestCandle?: boolean } = {}
+  { timeframe = 60, includeLatestCandle = true } : { timeframe?: number, includeLatestCandle?: boolean } = {}
   ): IOHLCV[] => {
 
     timeframe *= Math.floor(1000);

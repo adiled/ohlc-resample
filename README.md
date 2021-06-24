@@ -1,4 +1,4 @@
-Improvement fork of `candlestick-convert` covering edge cases.
+Improvement fork of `candlestick-convert`.
 
 # ohlc-resample
 
@@ -37,8 +37,9 @@ resampleOhlcv(objectOhlcv as IOHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }
 resampleOhlcv(arrayOhlcv as OHLCV[], { baseTimeframe: 60, newTimeframe: 5*60 }) // return OHLCV[]
 
 // Ticks grouped and resampled to 1m OHCLV
+// option.includeLatestCandle is by default `true`
 
-resampleTicksByTime(tickData as TradeTick[], { timeframe: 60 }) // return IOHLCV[]
+resampleTicksByTime(tickData as TradeTick[], { timeframe: 60, includeLatestCandle: false }) // return IOHLCV[]
 
 // Ticks grouped and resampled by every 5 ticks
 
