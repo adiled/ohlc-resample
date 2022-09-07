@@ -1,4 +1,10 @@
-import _, { fill } from "lodash";
+import sum from "lodash/sum";
+import max from "lodash/max";
+import min from "lodash/min";
+import isPlainObject from "lodash/isPlainObject";
+import groupBy from "lodash/groupBy";
+import sortBy from "lodash/sortBy";
+import chunk from "lodash/chunk";
 
 export type IOHLCV = {
   time: number;
@@ -35,30 +41,31 @@ export enum OHLCVField {
 
 export type Trade = TradeTick;
 
- /**
- * Resample OHLCV to different timeframe
-  * @param ohlcvData
-  * @param options 
-  * @param options.baseTimeframe 
-  * @param options.newTimeframe
-  */
+/**
+* Resample OHLCV to different timeframe
+ * @param ohlcvData
+ * @param options 
+ * @param options.baseTimeframe 
+ * @param options.newTimeframe
+ */
 
 export const resampleOhlcv = (
   ohlcvData: OHLCV[] | IOHLCV[],
   { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number, newTimeframe: number }
-  ) : OHLCV[] | IOHLCV[] => {
+): OHLCV[] | IOHLCV[] => {
 
-  if(ohlcvData.length === 0) {
+  if (ohlcvData.length === 0) {
     throw new Error("input OHLCV data has no candles");
   }
-  if(_.isPlainObject(ohlcvData[0])) {
+
+  if (isPlainObject(ohlcvData[0])) {
     const data = ohlcvData as IOHLCV[];
-    const candledata: OHLCV[] = data.map(e => [e.time,e.open,e.high,e.low,e.close,e.volume]);
+    const candledata: OHLCV[] = data.map(e => [e.time, e.open, e.high, e.low, e.close, e.volume]);
     const result = resampleOhlcvArray(candledata, baseTimeframe, newTimeframe);
     return result.map(candle => ({
       time: candle[OHLCVField.TIME],
       open: candle[OHLCVField.OPEN],
-      high:candle[OHLCVField.HIGH],
+      high: candle[OHLCVField.HIGH],
       low: candle[OHLCVField.LOW],
       close: candle[OHLCVField.CLOSE],
       volume: candle[OHLCVField.VOLUME],
@@ -76,9 +83,12 @@ export const resampleOhlcv = (
  * @param newFrame
  */
 
-const resampleOhlcvArray = (candledata: OHLCV[],
+export const resampleOhlcvArray = (
+  candledata: OHLCV[],
   baseFrame: number = 60,
-  newFrame: number = 300): OHLCV[] => {
+  newFrame: number = 300
+): OHLCV[] => {
+
   const result: OHLCV[] = [];
   baseFrame *= 1000;
   newFrame *= 1000;
@@ -120,12 +130,11 @@ const resampleOhlcvArray = (candledata: OHLCV[],
     candle[OHLCVField.CLOSE] = Number(candle[OHLCVField.CLOSE]);
     candle[OHLCVField.VOLUME] = Number(candle[OHLCVField.VOLUME]);
 
-
     // First / Force New Candle
-    if(timeOpen === null){
+    if (timeOpen === null) {
       timeOpen = candle[OHLCVField.TIME];
 
-      if(candle[OHLCVField.TIME] % newFrame > 0){
+      if (candle[OHLCVField.TIME] % newFrame > 0) {
         timeOpen = candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame;
       }
 
@@ -135,11 +144,10 @@ const resampleOhlcvArray = (candledata: OHLCV[],
       close = candle[OHLCVField.CLOSE];
       volume = 0;
       j = 1;
-
     }
 
-      // New Candle
-    if( candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame !== timeOpen){
+    // New Candle
+    if (candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame !== timeOpen) {
 
       result.push([timeOpen, open, high, low, close, volume]);
 
@@ -155,22 +163,18 @@ const resampleOhlcvArray = (candledata: OHLCV[],
     high = Math.max(candle[OHLCVField.HIGH], high);
     low = Math.min(candle[OHLCVField.LOW], low);
     close = candle[OHLCVField.CLOSE];
-    volume =  volume + candle[OHLCVField.VOLUME];
+    volume = volume + candle[OHLCVField.VOLUME];
 
     // Batch counter
-
-
-    if(j === convertRatio){
+    if (j === convertRatio) {
       result.push([timeOpen, open, high, low, close, volume]);
       timeOpen = null;
     }
 
-    j = j+1;
-
+    j = j + 1;
   }
 
   return result;
-
 }
 
 /**
@@ -179,14 +183,18 @@ const resampleOhlcvArray = (candledata: OHLCV[],
  * @param ticks 
  */
 
-const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
+export const tickGroupToOhlcv = (
+  time: number,
+  ticks: Array<TradeTick>
+) => {
+
   const prices = ticks.map(tick => Number(tick.price));
-  const volume = _.sum(ticks.map(tick => Number(tick.quantity))) || 0;
+  const volume = sum(ticks.map(tick => Number(tick.quantity))) || 0;
   return {
     time,
     open: prices[0] || 0,
-    high: _.max(prices) || 0,
-    low: _.min(prices) || 0,
+    high: max(prices) || 0,
+    low: min(prices) || 0,
     close: prices[prices.length - 1] || 0,
     volume
   }
@@ -201,17 +209,18 @@ const tickGroupToOhlcv = (time: number, ticks: Array<TradeTick>) => {
  * @param options.msTimeframe
  */
 
-const makeGapCandles = (
+export const makeGapCandles = (
   lastCandle: IOHLCV,
   nextCandle: IOHLCV,
-  { method, msTimeframe } : {method?: string, msTimeframe: number }
-  ) : IOHLCV[] => {
+  { method, msTimeframe }: { method?: string, msTimeframe: number }
+): IOHLCV[] => {
+
   const gapCandles = [];
   const intervalGap = (nextCandle.time - lastCandle.time - msTimeframe) / msTimeframe;
-  if(intervalGap > 0 && lastCandle && nextCandle) {
-    for(let i = 1; i <= intervalGap; i++) {
+  if (intervalGap > 0 && lastCandle && nextCandle) {
+    for (let i = 1; i <= intervalGap; i++) {
       gapCandles.push({
-        time: lastCandle.time + (i*msTimeframe),
+        time: lastCandle.time + (i * msTimeframe),
         open: lastCandle.close,
         high: lastCandle.close,
         low: lastCandle.close,
@@ -225,55 +234,57 @@ const makeGapCandles = (
 
 /**
  * Convert ticks for candles grouped by intervals in seconds or tick count
- * @param tradedata 
+ * @param tickData 
  * @param options
  * @param options.timeframe
  * @param options.includeLatestCandle
+ * @param options.fillGaps
  */
 
 export const resampleTicksByTime = (
   tickData: Trade[],
-  { timeframe = 60, includeLatestCandle = true, fillGaps = false } :
-  { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean } = {}
-  ): IOHLCV[] => {
+  { timeframe = 60, includeLatestCandle = true, fillGaps = false }:
+    { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean } = {}
+): IOHLCV[] => {
 
-    timeframe *= Math.floor(1000);
-    const tickGroups = _.groupBy(tickData, (tick) => tick.time - (tick.time % timeframe));
-    const candles: IOHLCV[] = [];
-    Object.keys(tickGroups).forEach(timeOpen => {
-      const ticks = tickGroups[timeOpen];
-      const candle = tickGroupToOhlcv(Number(timeOpen), ticks);
-      if(fillGaps && candles.length) {
-        const lastCandle = candles[candles.length - 1];
-        candles.push(...makeGapCandles(lastCandle, candle, { msTimeframe: timeframe }));
-      }
-      candles.push(candle);
-    });
-    const sortedCandles = _.sortBy(candles, (candle) => candle.time);
-
-    if(includeLatestCandle === false) {
-      sortedCandles.pop();
+  timeframe *= Math.floor(1000);
+  const tickGroups = groupBy(tickData, (tick) => tick.time - (tick.time % timeframe));
+  const candles: IOHLCV[] = [];
+  Object.keys(tickGroups).forEach(timeOpen => {
+    const ticks = tickGroups[timeOpen];
+    const candle = tickGroupToOhlcv(Number(timeOpen), ticks);
+    if (fillGaps && candles.length) {
+      const lastCandle = candles[candles.length - 1];
+      candles.push(...makeGapCandles(lastCandle, candle, { msTimeframe: timeframe }));
     }
-    return sortedCandles;
+    candles.push(candle);
+  });
+  const sortedCandles = sortBy(candles, (candle) => candle.time);
+
+  if (includeLatestCandle === false) {
+    sortedCandles.pop();
+  }
+  return sortedCandles;
 }
 
 /**
  * Covert ticks to candles by linear groups
- * @param tradedata 
+ * @param tickData 
  * @param options 
  * @param options.tickCount
  */
 
 export const resampleTicksByCount = (tickData: Trade[],
-  { tickCount = 5 } : { tickCount?: number } = {}
-  ): IOHLCV[] => {
+  { tickCount = 5 }: { tickCount?: number } = {}
+): IOHLCV[] => {
+
   if (tickCount < 1) {
     throw new Error("Convert cannot be smaller than 1");
   }
   const candles: IOHLCV[] = [];
-  const tickGroups = _.chunk(tickData, tickCount);
+  const tickGroups = chunk(tickData, tickCount);
   tickGroups.forEach(ticks => {
-    candles.push(tickGroupToOhlcv(Number(ticks[ticks.length-1].time), ticks));
+    candles.push(tickGroupToOhlcv(Number(ticks[ticks.length - 1].time), ticks));
   });
   return candles;
 }
