@@ -1,6 +1,6 @@
 {
   "name": "ohlc-resample",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames",
   "main": "dist/index.js",
   "files": [
