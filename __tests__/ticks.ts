@@ -1,6 +1,7 @@
 "use strict";
 
-import Converter, { Trade } from "../src/index";
+import Converter from "../src/index";
+import type { Trade } from "../src/types";
 
 const adabnb_trades = [
   {

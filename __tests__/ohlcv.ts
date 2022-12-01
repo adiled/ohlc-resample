@@ -1,6 +1,7 @@
 "use strict";
 
-import CConverter, { IOHLCV, OHLCV, resampleOhlcv } from "../src/index";
+import CConverter, { resampleOhlcv } from "../src/index";
+import type { IOHLCV, OHLCV } from "../src/types";
 
 // From Binance
 const btc_usdt_1m: OHLCV[] = [

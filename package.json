@@ -1,7 +1,7 @@
 {
   "name": "ohlc-resample",
   "version": "1.2.0",
-  "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames",
+  "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames, includes CLI",
   "main": "dist/index.js",
   "files": [
     "dist"
@@ -14,6 +14,9 @@
     "test": "jest",
     "coveralls": "jest --coverage --coverageReporters=text-lcov | coveralls"
   },
+  "bin": {
+    "ohlc": "./src/cli.ts"
+  },
   "keywords": [
     "ohlc",
     "ohlcv",
@@ -23,7 +26,8 @@
     "ccxt",
     "stock",
     "chart",
-    "analysis"
+    "analysis",
+    "cli"
   ],
   "repository": {
     "type": "git",
@@ -45,6 +49,9 @@
     "typescript": "^4.4.3"
   },
   "dependencies": {
-    "lodash": "^4.17.21"
+    "commander": "^9.4.1",
+    "fast-csv": "^4.3.6",
+    "lodash": "^4.17.21",
+    "ts-node": "^10.9.1"
   }
 }
