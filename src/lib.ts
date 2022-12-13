@@ -138,6 +138,15 @@ export const resampleOhlcvArray = (
       result.push([timeOpen, open, high, low, close, volume]);
       timeOpen = null;
     }
+    // Last Candle
+    if (i === candledata.length - 1) {
+      if (result.length == 0) {
+        break
+      }
+      if (result[result.length - 1][OHLCVField.TIME] !== timeOpen) {
+        result.push([timeOpen, open, high, low, close, volume])
+      }
+    }
 
     j = j + 1;
   }
