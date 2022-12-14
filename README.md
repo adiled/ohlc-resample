@@ -1,18 +1,25 @@
-Improvement fork of `candlestick-convert`.
-
-# ohlc-resample
-
-This package allow you to batch resample OHLCV candlesticks or create them from trade (tick) data sets.
-
-[![Coverage Status](https://coveralls.io/repos/github/adiled/ohlc-resample/badge.svg?branch=master)](https://coveralls.io/github/adiled/ohlc-resample?branch=master) ![NPM ohlc-resample](https://img.shields.io/npm/dt/ohlc-resample)
-
-#### Supported formats
-
-- OHLCV (CCXT format) `[[time,open,high,low,close,volume]]`
-- OHLCV JSON `[{time: number, open: number, high: number, low: number close: number, volume: number}]`
-- Trade JSON `[{time: number, price: number, quantity: number}]`
-
-#### Features
+<h1 align="center">ohlc-resample 🕯️</h1>
+<p align="center">
+Resample (inter-convert) trade, ticks or OHLCV data to different time frames
+</p>
+<p align="center">
+  <a href="https://www.npmjs.com/package/ohlc-resample" target="_blank">
+    <img alt="Version" src="https://img.shields.io/npm/v/ohlc-resample.svg">
+  </a>
+  <img alt="Downloads" src="https://img.shields.io/npm/dt/ohlc-resample">
+  <a href="https://github.com/adiled/ohlc-resample#readme" target="_blank">
+    <img alt="Documentation" src="https://img.shields.io/badge/documentation-yes-brightgreen.svg" />
+  </a>
+  <a href="https://github.com/adiled/ohlc-resample/graphs/commit-activity" target="_blank">
+    <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" />
+  </a>
+  <a href="https://coveralls.io/github/adiled/ohlc-resample?branch=master" target="_blank">
+    <img alt="Coverage Status" src="https://coveralls.io/repos/github/adiled/ohlc-resample/badge.svg?branch=master">
+  </a>
+  <a href="https://github.com/adiled/ohlc-resample/blob/master/LICENSE" target="_blank">
+    <img alt="License: LGPL--3.0" src="https://img.shields.io/github/license/adiled/ohlc-resample" />
+  </a>
+</p>
 
 - Typescript support
 - CCXT support
@@ -20,13 +27,19 @@ This package allow you to batch resample OHLCV candlesticks or create them from 
 - Low time complexity grouping based aggregations
 - Optional gap filling
 
-#### Install
+## Install
 
-```
+```sh
 npm install --save ohlc-resample
 ```
 
-#### Reference
+## Supported formats
+
+- OHLCV (CCXT format) `[[time,open,high,low,close,volume]]`
+- OHLCV JSON `[{time: number, open: number, high: number, low: number close: number, volume: number}]`
+- Trade JSON `[{time: number, price: number, quantity: number}]`
+
+## Reference
 
 ```typescript
 import {
@@ -61,7 +74,7 @@ resampleTicksByTime(tickData as TradeTick[], {
 resampleTicksByCount(tickData as TradeTick[], { tickCount: 5 }); // return IOHLCV[]
 ```
 
-#### Types
+## Types
 
 ```typescript
 export type IOHLCV = {
@@ -162,3 +175,31 @@ const tickChart = resampleTicksByCount(airbnb_ticks, {
   tickCount: 2,
 });
 ```
+
+## Contributors
+
+👤 **Adil Shaikh <hello@adils.me> (https://adils.me)**
+
+- Website: https://adils.me
+- Github: [@adiled](https://github.com/adiled)
+
+👤 Past authors of `candlestick-convert`
+
+## 🤝 Contributing
+
+Contributions, issues and feature requests are welcome!<br />Feel free to check [issues page](https://github.com/adiled/ohlc-resample/issues). You can also take a look at the [contributing guide](https://github.com/adiled/ohlc-resample/blob/master/CONTRIBUTING.md).
+
+### Run tests
+
+```sh
+yarn test
+```
+
+## Show your support
+
+Give a ⭐️ if this project helped you!
+
+## 📝 License
+
+Copyright © 2022 [Adil Shaikh <hello@adils.me> (https://adils.me)](https://github.com/adiled).<br />
+This project is [LGPL--3.0](https://github.com/adiled/ohlc-resample/blob/master/LICENSE) licensed.
