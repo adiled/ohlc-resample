@@ -6,7 +6,17 @@ import { program as commanderProgram } from 'commander';
 import { IOHLCV } from './types';
 import { resampleOhlcv } from './lib';
 
-export function parseCSV(data: string): IOHLCV[] {
+/**
+ * Parse CSV data containing OHLCV (Open, High, Low, Close, Volume) information
+ * into a structured array of objects. Each row in the CSV should contain
+ * timestamp and OHLCV values in the correct order.
+ * 
+ * @throws Error if the CSV is empty or has invalid format
+ */
+export function parseCSV(
+  /** The CSV data string to parse */
+  data: string
+): IOHLCV[] {
   const trimmed = data.trim();
   if (!trimmed) {
     throw new Error('Error: CSV must have at least one row');
@@ -60,7 +70,17 @@ export function parseCSV(data: string): IOHLCV[] {
   return rows;
 }
 
-export function detectFormat(data: string): 'csv' | 'json' {
+/**
+ * Detect whether the input data contains CSV or JSON formatted OHLCV data.
+ * The detection is based on the presence of JSON-specific characters and
+ * structure.
+ * 
+ * @throws Error if the format cannot be detected
+ */
+export function detectFormat(
+  /** The input data string to analyze */
+  data: string
+): 'csv' | 'json' {
   try {
     JSON.parse(data);
     return 'json';
@@ -74,12 +94,22 @@ export function detectFormat(data: string): 'csv' | 'json' {
   }
 }
 
+/**
+ * Process command-line arguments and execute the OHLCV resampling workflow.
+ * Coordinates the data flow from input to output, applying the specified
+ * resampling rules.
+ */
 export async function runCli(
+  /** Command line arguments array */
   argv: string[],
+  /** Input stream (defaults to process.stdin) */
   stdin: NodeJS.ReadableStream = process.stdin,
+  /** Output stream (defaults to process.stdout) */
   stdout: NodeJS.WritableStream = process.stdout,
+  /** Error stream (defaults to process.stderr) */
   stderr: NodeJS.WritableStream = process.stderr,
-  isTTY: boolean = process.stdin.isTTY // allow override for tests
+  /** Whether the input is a TTY (defaults to process.stdin.isTTY) */
+  isTTY: boolean = process.stdin.isTTY
 ): Promise<void> {
   const program = commanderProgram.createCommand();
   program
@@ -97,7 +127,16 @@ export async function runCli(
 
   const options = program.opts();
 
-  async function readFileData(filePath: string): Promise<IOHLCV[]> {
+  /**
+   * Transform file contents into an array of OHLCV objects. Automatically
+   * detects and handles both CSV and JSON input formats.
+   * 
+   * @throws Error if the file cannot be read or parsed
+   */
+  async function readFileData(
+    /** Path to the input file */
+    filePath: string
+  ): Promise<IOHLCV[]> {
     try {
       const inFormat = path.extname(filePath).slice(1).toLowerCase();
       if (!['csv', 'json'].includes(inFormat)) {
@@ -122,7 +161,16 @@ export async function runCli(
     }
   }
 
-  async function readPipeData(stdin: NodeJS.ReadableStream): Promise<IOHLCV[]> {
+  /**
+   * Transform stdin data into an array of OHLCV objects. Processes the
+   * input stream line by line, handling both CSV and JSON formats.
+   * 
+   * @throws Error if the data cannot be read or parsed
+   */
+  async function readPipeData(
+    /** The input stream to read from */
+    stdin: NodeJS.ReadableStream
+  ): Promise<IOHLCV[]> {
     return new Promise((resolve, reject) => {
       let data = '';
       stdin.on('data', (chunk) => {
@@ -148,7 +196,20 @@ export async function runCli(
     });
   }
 
-  async function writeOutput(data: IOHLCV[], format: 'csv' | 'json', outputPath?: string, stdoutStream: NodeJS.WritableStream = process.stdout): Promise<void> {
+  /**
+   * Transform OHLCV data into the specified output format. Converts the
+   * array of objects into either CSV or JSON string representation.
+   */
+  async function writeOutput(
+    /** Array of OHLCV objects to write */
+    data: IOHLCV[],
+    /** Output format ('csv' or 'json') */
+    format: 'csv' | 'json',
+    /** Optional path to write the output file */
+    outputPath?: string,
+    /** Stream to write to if no outputPath is provided */
+    stdoutStream: NodeJS.WritableStream = process.stdout
+  ): Promise<void> {
     if (outputPath) {
       const outStream = fs.createWriteStream(outputPath);
       await new Promise<void>((resolve, reject) => {
