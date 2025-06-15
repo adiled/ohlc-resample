@@ -14,7 +14,7 @@ program
   .option('-f, --format <char>', 'Output file format (csv, json)', 'csv')
   .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
   .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
-  .version('1.2.1');
+  .version('1.3.0');
 
 program.parse();
 program.showHelpAfterError();
