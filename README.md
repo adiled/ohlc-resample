@@ -178,61 +178,33 @@ const tickChart = resampleTicksByCount(airbnb_ticks, {
 
 ## CLI Usage
 
-The package includes a command-line interface for resampling OHLCV data. You can use it directly with `npx`:
+The package includes a command-line interface for resampling OHLCV data between timeframes and file formats.
 
-```sh
-npx ohlc-resample [options]
+### Basic Usage
+
+```bash
+# Resample CSV file with default timeframes (1m -> 5m)
+ohlc-resample -i input.csv
+
+# Resample JSON file with custom timeframes
+ohlc-resample -i input.json -b 60 -n 300
+
+# Save output to file
+ohlc-resample -i input.csv -o output.json -f json
 ```
 
-### Options
+### Input Formats
 
-- `-i, --input <path>`: Input file path (CSV or JSON) or use pipe
-- `-o, --output <path>`: Output file path (CSV or JSON) or use pipe
-- `-f, --format <format>`: Output format (csv or json), defaults to csv
-- `-b, --base-timeframe <seconds>`: Base timeframe in seconds, defaults to 60
-- `-n, --new-timeframe <seconds>`: New timeframe in seconds, defaults to 300
-- `-V, --version`: Show version number
-- `-h, --help`: Show help
+The CLI supports both CSV and JSON input formats:
 
-### Examples
-
-**Read from file and output to stdout:**
-```sh
-npx ohlc-resample -i data.csv
-```
-
-**Read from file and write to file:**
-```sh
-npx ohlc-resample -i data.csv -o resampled.json -f json
-```
-
-**Use pipe for input:**
-```sh
-cat data.csv | npx ohlc-resample
-```
-
-**Use pipe for output:**
-```sh
-npx ohlc-resample -i data.csv | grep "2023"
-```
-
-**Custom timeframes:**
-```sh
-npx ohlc-resample -i data.csv -b 60 -n 300
-```
-
-### Input Format
-
-The CLI accepts both CSV and JSON input formats:
-
-**CSV Format:**
+#### CSV Format
 ```csv
 time,open,high,low,close,volume
 1609459200000,100,105,95,102,1000
-1609462800000,102,107,101,106,1200
+1609459260000,102,107,101,106,1200
 ```
 
-**JSON Format:**
+#### JSON Format
 ```json
 [
   {
@@ -246,7 +218,49 @@ time,open,high,low,close,volume
 ]
 ```
 
-Note: All timestamps must be in milliseconds.
+### Pipe Input
+
+You can pipe data into the CLI from other commands. The format is automatically detected, or you can specify it:
+
+```bash
+# Auto-detect format
+cat data.json | ohlc-resample
+cat data.csv | ohlc-resample
+
+# Force specific format
+cat data.json | ohlc-resample --input-format json
+cat data.csv | ohlc-resample --input-format csv
+```
+
+### Options
+
+- `-i, --input <file>`: Input file path (CSV or JSON)
+- `-o, --output <file>`: Output file path (optional, defaults to stdout)
+- `-f, --format <format>`: Output format (csv or json, default: csv)
+- `-if, --input-format <format>`: Input format when using pipe (csv, json, or auto, default: auto)
+- `-b, --base-timeframe <seconds>`: Base timeframe in seconds (default: 60)
+- `-n, --new-timeframe <seconds>`: New timeframe in seconds (default: 300)
+- `-h, --help`: Display help information
+- `-V, --version`: Display version information
+
+### Examples
+
+```bash
+# Resample 1-minute data to 5-minute candles
+ohlc-resample -i data.csv
+
+# Resample 1-minute data to 15-minute candles
+ohlc-resample -i data.csv -b 60 -n 900
+
+# Convert CSV to JSON
+ohlc-resample -i data.csv -o data.json -f json
+
+# Pipe CSV data and save as JSON
+cat data.csv | ohlc-resample -o output.json -f json
+
+# Pipe JSON data with forced format
+cat data.json | ohlc-resample --input-format json -o output.csv -f csv
+```
 
 ## Contributors
 
