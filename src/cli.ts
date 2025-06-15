@@ -3,10 +3,76 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { program as commanderProgram } from 'commander';
-import * as csv from 'fast-csv';
-import { OHLCV, IOHLCV } from './types';
+import { IOHLCV } from './types';
 import { resampleOhlcv } from './lib';
-import { Readable, Writable } from 'stream';
+
+export function parseCSV(data: string): IOHLCV[] {
+  const trimmed = data.trim();
+  if (!trimmed) {
+    throw new Error('Error: CSV must have at least one row');
+  }
+  const lines = trimmed.split('\n');
+  let headers: string[];
+  let startIndex: number;
+  const requiredFields = ['time', 'open', 'high', 'low', 'close', 'volume'];
+
+  // If the first line matches the required fields, treat as header
+  const firstLine = lines[0].trim();
+  const firstLineFields = firstLine.split(',').map(h => h.trim());
+  if (requiredFields.every((f, i) => firstLineFields[i] === f)) {
+    headers = firstLineFields;
+    startIndex = 1;
+  } else {
+    headers = requiredFields;
+    startIndex = 0;
+  }
+
+  const rows: IOHLCV[] = [];
+  for (let i = startIndex; i < lines.length; i++) {
+    if (!lines[i].trim()) continue; // skip empty lines
+    const values = lines[i].split(',').map(v => v.trim());
+    if (values.length !== headers.length) {
+      // Skip lines that do not have exactly 5 commas (6 columns)
+      continue;
+    }
+    const row: any = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index];
+    });
+    const missingValues = requiredFields.filter(field => row[field] === undefined || row[field] === '');
+    if (missingValues.length > 0) {
+      // Skip lines with missing required values
+      continue;
+    }
+    // Skip lines with non-numeric values
+    if (isNaN(Number(row.time)) || isNaN(Number(row.open)) || isNaN(Number(row.high)) || isNaN(Number(row.low)) || isNaN(Number(row.close)) || isNaN(Number(row.volume))) {
+      continue;
+    }
+    rows.push({
+      time: Number(row.time),
+      open: Number(row.open),
+      high: Number(row.high),
+      low: Number(row.low),
+      close: Number(row.close),
+      volume: Number(row.volume)
+    });
+  }
+  return rows;
+}
+
+export function detectFormat(data: string): 'csv' | 'json' {
+  try {
+    JSON.parse(data);
+    return 'json';
+  } catch {
+    const firstLine = data.split('\n')[0].trim();
+    // If the first line has exactly 5 commas, it's likely CSV (6 columns)
+    if ((firstLine.match(/,/g) || []).length === 5) {
+      return 'csv';
+    }
+    throw new Error('Could not detect input format. Please specify --input-format');
+  }
+}
 
 export async function runCli(
   argv: string[],
@@ -31,32 +97,6 @@ export async function runCli(
 
   const options = program.opts();
 
-  function detectFormat(data: string): 'csv' | 'json' {
-    try {
-      JSON.parse(data);
-      return 'json';
-    } catch {
-      const firstLine = data.split('\n')[0].trim();
-      if (firstLine.includes(',')) {
-        const headers = firstLine.toLowerCase().split(',');
-        if (
-          headers.includes('time') &&
-          headers.includes('open') &&
-          headers.includes('high') &&
-          headers.includes('low') &&
-          headers.includes('close') &&
-          headers.includes('volume')
-        ) {
-          return 'csv';
-        }
-        if (headers.length === 6 && headers.every(h => !isNaN(Number(h)))) {
-          return 'csv';
-        }
-      }
-      throw new Error('Could not detect input format. Please specify --input-format');
-    }
-  }
-
   async function readFileData(filePath: string): Promise<IOHLCV[]> {
     try {
       const inFormat = path.extname(filePath).slice(1).toLowerCase();
@@ -65,57 +105,8 @@ export async function runCli(
       }
       const inPath = path.resolve(filePath);
       if (inFormat === 'csv') {
-        return await new Promise((resolve, reject) => {
-          const rows: any[] = [];
-          let errored = false;
-          const fileStream = fs.createReadStream(inPath)
-            .on('error', (err: any) => {
-              if (errored) return;
-              errored = true;
-              const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-              reject(new Error(msg));
-            });
-          const csvStream = csv.parse({ headers: true })
-            .on('data', (row) => {
-              if (errored) return;
-              rows.push(row);
-            })
-            .on('end', () => {
-              if (errored) return;
-              if (rows.length === 0) {
-                errored = true;
-                reject(new Error('Error: No valid CSV data found'));
-                return;
-              }
-              const requiredFields = ['time', 'open', 'high', 'low', 'close', 'volume'];
-              for (const row of rows) {
-                const missingFields = requiredFields.filter(field => row[field] === undefined);
-                if (missingFields.length > 0) {
-                  errored = true;
-                  fileStream.destroy();
-                  csvStream.destroy();
-                  reject(new Error('Error: Missing required fields in CSV: ' + missingFields.join(', ')));
-                  return;
-                }
-              }
-              const results = rows.map(row => ({
-                time: Number(row.time),
-                open: Number(row.open),
-                high: Number(row.high),
-                low: Number(row.low),
-                close: Number(row.close),
-                volume: Number(row.volume)
-              }));
-              resolve(results);
-            })
-            .on('error', (err: any) => {
-              if (errored) return;
-              errored = true;
-              const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-              reject(new Error(msg));
-            });
-          fileStream.pipe(csvStream);
-        });
+        const data = await fs.promises.readFile(inPath, 'utf8');
+        return parseCSV(data);
       } else {
         const inBuffer = await fs.promises.readFile(inPath);
         try {
@@ -131,85 +122,67 @@ export async function runCli(
     }
   }
 
-  async function readPipeData(input: NodeJS.ReadableStream): Promise<IOHLCV[]> {
+  async function readPipeData(stdin: NodeJS.ReadableStream): Promise<IOHLCV[]> {
     return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      input
-        .on('data', (chunk) => {
-          chunks.push(Buffer.from(chunk));
-        })
-        .on('end', () => {
-          try {
-            const data = Buffer.concat(chunks).toString();
-            const format = options.inputFormat === 'auto' ? detectFormat(data) : options.inputFormat;
-            if (format === 'json') {
-              try {
-                const jsonData = JSON.parse(data);
-                resolve(jsonData);
-              } catch (err) {
-                reject(new Error('Error: ' + (err instanceof Error ? err.message : String(err))));
-              }
-            } else {
-              const results: IOHLCV[] = [];
-              const lines = data.trim().split('\n');
-              const hasHeaders = lines[0].toLowerCase().includes('time');
-              const csvData = hasHeaders ? data : 'time,open,high,low,close,volume\n' + data;
-              let hadData = false;
-              csv.parseString(csvData, { headers: true })
-                .on('data', (row) => {
-                  hadData = true;
-                  results.push({
-                    time: Number(row.time),
-                    open: Number(row.open),
-                    high: Number(row.high),
-                    low: Number(row.low),
-                    close: Number(row.close),
-                    volume: Number(row.volume)
-                  });
-                })
-                .on('end', () => {
-                  if (!hadData) {
-                    reject(new Error('Error: No valid CSV data found'));
-                  } else {
-                    resolve(results);
-                  }
-                })
-                .on('error', (err) => {
-                  reject(new Error('Error: ' + (err instanceof Error ? err.message : String(err))));
-                });
-            }
-          } catch (error) {
-            reject(new Error('Error: ' + (error instanceof Error ? error.message : String(error))));
+      let data = '';
+      stdin.on('data', (chunk) => {
+        data += chunk;
+      });
+      stdin.on('end', () => {
+        try {
+          const inFormat = data.trim().startsWith('[') ? 'json' : 'csv';
+          if (inFormat === 'csv') {
+            resolve(parseCSV(data));
+          } else {
+            resolve(JSON.parse(data));
           }
-        })
-        .on('error', (err) => {
-          reject(new Error('Error: ' + (err instanceof Error ? err.message : String(err))));
-        });
+        } catch (err: any) {
+          const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
+          reject(new Error(msg));
+        }
+      });
+      stdin.on('error', (err: any) => {
+        const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
+        reject(new Error(msg));
+      });
     });
   }
 
-  async function writeOutput(data: IOHLCV[], outputPath?: string): Promise<void> {
-    let outStream: NodeJS.WritableStream;
+  async function writeOutput(data: IOHLCV[], format: 'csv' | 'json', outputPath?: string, stdoutStream: NodeJS.WritableStream = process.stdout): Promise<void> {
     if (outputPath) {
-      outStream = fs.createWriteStream(outputPath);
-    } else {
-      outStream = stdout;
-    }
-    if (options.format === 'csv') {
-      return new Promise((resolve, reject) => {
-        const csvStream = csv.write(data, { headers: true });
-        csvStream.pipe(outStream);
-        csvStream.on('error', reject);
+      const outStream = fs.createWriteStream(outputPath);
+      await new Promise<void>((resolve, reject) => {
         outStream.on('error', reject);
         outStream.on('finish', resolve);
+        if (format === 'json') {
+          outStream.write(JSON.stringify(data, null, 2), () => outStream.end());
+        } else {
+          outStream.write('time,open,high,low,close,volume\n');
+          data.forEach((row, idx) => {
+            const line = `${row.time},${row.open},${row.high},${row.low},${row.close},${row.volume}`;
+            if (idx < data.length - 1) {
+              outStream.write(line + '\n');
+            } else {
+              outStream.write(line);
+            }
+          });
+          outStream.end();
+        }
       });
     } else {
-      return new Promise((resolve, reject) => {
-        outStream.write(JSON.stringify(data, null, 2), (err) => {
-          if (err) reject(err);
-          else resolve();
+      if (format === 'json') {
+        stdoutStream.write(JSON.stringify(data, null, 2));
+      } else {
+        stdoutStream.write('time,open,high,low,close,volume\n');
+        data.forEach((row, idx) => {
+          const line = `${row.time},${row.open},${row.high},${row.low},${row.close},${row.volume}`;
+          if (idx < data.length - 1) {
+            stdoutStream.write(line + '\n');
+          } else {
+            stdoutStream.write(line);
+          }
         });
-      });
+      }
     }
   }
 
@@ -226,7 +199,7 @@ export async function runCli(
       throw new Error('New timeframe must be greater than base timeframe');
     }
     const resampledData = resampleOhlcv(data, { baseTimeframe, newTimeframe }) as IOHLCV[];
-    await writeOutput(resampledData, options.output);
+    await writeOutput(resampledData, options.format, options.output, stdout);
   } catch (error: unknown) {
     stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
     process.exitCode = 1;

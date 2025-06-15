@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { IOHLCV } from '../src/types';
 import { withTimeout } from './utils';
-import { runCli } from '../src/cli';
+import { runCli, parseCSV } from '../src/cli';
 import { Readable, Writable } from 'stream';
 
 describe('CLI', () => {
@@ -344,6 +344,61 @@ describe('CLI', () => {
           volume: 5000
         });
       }, 1000, 'force CSV format');
+    });
+  });
+
+  describe('parseCSV', () => {
+    const { parseCSV } = require('../src/cli');
+    it('parses CSV with header', () => {
+      const csv = 'time,open,high,low,close,volume\n1000,1,2,0.5,1.5,10';
+      const result = parseCSV(csv);
+      expect(result).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
+    });
+    it('parses CSV without header', () => {
+      const csv = '1000,1,2,0.5,1.5,10';
+      const result = parseCSV(csv);
+      expect(result).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
+    });
+    it('throws for empty CSV', () => {
+      expect(() => parseCSV('')).toThrow('Error: CSV must have at least one row');
+    });
+    it('omits lines with wrong number of columns', () => {
+      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5\n3000,1,2,0.5,1.5,10';
+      const result = parseCSV(csv);
+      expect(result).toEqual([
+        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
+      ]);
+    });
+    it('omits lines with missing values', () => {
+      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,,1.5,10\n3000,1,2,0.5,1.5,10';
+      const result = parseCSV(csv);
+      expect(result).toEqual([
+        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
+      ]);
+    });
+    it('omits lines with non-numeric values', () => {
+      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5,abc\n3000,1,2,0.5,1.5,10';
+      const result = parseCSV(csv);
+      expect(result).toEqual([
+        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
+      ]);
+    });
+  });
+
+  describe('detectFormat', () => {
+    const { detectFormat } = require('../src/cli');
+    it('detects CSV for 5-comma line', () => {
+      expect(detectFormat('1,2,3,4,5,6')).toBe('csv');
+      expect(detectFormat('1000,1,2,0.5,1.5,10\n')).toBe('csv');
+    });
+    it('detects JSON for valid JSON', () => {
+      expect(detectFormat('[{"time":1,"open":2,"high":3,"low":1,"close":2,"volume":10}]')).toBe('json');
+    });
+    it('throws for unknown format', () => {
+      expect(() => detectFormat('foo|bar|baz')).toThrow('Could not detect input format');
     });
   });
 }); 

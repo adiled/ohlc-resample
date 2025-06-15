@@ -45,6 +45,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/lodash": "^4.14.173",
+    "@types/node": "^24.0.1",
     "coveralls": "^3.1.1",
     "jest": ">=27.2.1",
     "rimraf": "^6.0.1",
@@ -53,7 +54,6 @@
   },
   "dependencies": {
     "commander": "^14.0.0",
-    "fast-csv": "^5.0.2",
     "lodash": "^4.17.21",
     "ts-node": "^10.9.1"
   }
