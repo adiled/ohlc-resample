@@ -147,4 +147,42 @@ describe('CLI', () => {
       fs.unlinkSync(invalidCsvFile);
     });
   });
+
+  describe('Resampling', () => {
+    test('should resample data with default timeframes', async () => {
+      const { stdout } = await execAsync(`node ${cliPath} -i ${csvFile}`);
+      const output = JSON.parse(stdout);
+      expect(output).toHaveLength(1); // 3 minutes of 1-minute data resampled to 5 minutes
+      expect(output[0]).toHaveProperty('time');
+      expect(output[0]).toHaveProperty('open');
+      expect(output[0]).toHaveProperty('high');
+      expect(output[0]).toHaveProperty('low');
+      expect(output[0]).toHaveProperty('close');
+      expect(output[0]).toHaveProperty('volume');
+    });
+
+    test('should resample data with custom timeframes', async () => {
+      const { stdout } = await execAsync(`node ${cliPath} -i ${csvFile} -b 60 -n 120`);
+      const output = JSON.parse(stdout);
+      expect(output).toHaveLength(2); // 3 minutes of 1-minute data resampled to 2 minutes
+    });
+
+    test('should handle invalid timeframe values', async () => {
+      try {
+        await execAsync(`node ${cliPath} -i ${csvFile} -b invalid -n 300`);
+        fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).toContain('Timeframes must be valid numbers');
+      }
+    });
+
+    test('should handle invalid timeframe relationship', async () => {
+      try {
+        await execAsync(`node ${cliPath} -i ${csvFile} -b 300 -n 60`);
+        fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).toContain('New timeframe must be greater than base timeframe');
+      }
+    });
+  });
 }); 

@@ -5,12 +5,15 @@ import * as fs from 'fs';
 import { program } from 'commander';
 import * as csv from 'fast-csv';
 import { OHLCV, IOHLCV } from './types';
+import { resampleOhlcv } from './lib';
 
 program
   .description('Resample OHLCV between timeframes and file formats')
   .option('-i, --input <char>', 'Input file path (csv, json) or use pipe')
   .option('-o, --output <char>', 'Output file path (csv, json) or use pipe')
   .option('-f, --format <char>', 'Output file format (csv, json)', 'csv')
+  .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
+  .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
   .version('1.2.1');
 
 program.parse();
@@ -89,22 +92,34 @@ async function main() {
 
     const data = await processInput(input);
     
-    // TODO: Process data (resample)
+    // Resample the data
+    const baseTimeframe = parseInt(options.baseTimeframe, 10);
+    const newTimeframe = parseInt(options.newTimeframe, 10);
+    
+    if (isNaN(baseTimeframe) || isNaN(newTimeframe)) {
+      throw new Error('Timeframes must be valid numbers');
+    }
+    
+    if (newTimeframe <= baseTimeframe) {
+      throw new Error('New timeframe must be greater than base timeframe');
+    }
+    
+    const resampledData = resampleOhlcv(data, { baseTimeframe, newTimeframe }) as IOHLCV[];
     
     // Output handling
     if (options.output) {
       const outStream = fs.createWriteStream(options.output);
       if (options.format === 'csv') {
-        csv.write(data, { headers: true }).pipe(outStream);
+        csv.write(resampledData, { headers: true }).pipe(outStream);
       } else {
-        outStream.write(JSON.stringify(data, null, 2));
+        outStream.write(JSON.stringify(resampledData, null, 2));
       }
     } else {
       // Output to stdout
       if (options.format === 'csv') {
-        csv.write(data, { headers: true }).pipe(process.stdout);
+        csv.write(resampledData, { headers: true }).pipe(process.stdout);
       } else {
-        console.log(JSON.stringify(data, null, 2));
+        console.log(JSON.stringify(resampledData, null, 2));
       }
     }
   } catch (error: unknown) {
