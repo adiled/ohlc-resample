@@ -189,8 +189,22 @@ ohlc-resample -i input.csv
 # Resample JSON file with custom timeframes
 ohlc-resample -i input.json -b 60 -n 300
 
-# Save output to file
+# Save output to file with specific format
 ohlc-resample -i input.csv -o output.json -f json
+```
+
+### Options
+
+```bash
+Options:
+  -V, --version              Show version number
+  -i, --input <char>         Input file path (csv, json) or use pipe
+  -o, --output <char>        Output file path (csv, json) or use pipe
+  -f, --format <char>        Output file format (csv, json) (default: "json")
+  --input-format <char>      Input format when using pipe (csv, json, auto) (default: "auto")
+  -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
+  -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
+  -h, --help                 Display help for command
 ```
 
 ### Input Formats
@@ -226,55 +240,30 @@ You can pipe data into the CLI from other commands. The format is automatically 
 # Auto-detect format
 cat data.json | ohlc-resample
 cat data.csv | ohlc-resample
-echo '1609459200000,100,105,95,102,1000' | ohlc-resample
 
 # Force specific format
 cat data.json | ohlc-resample --input-format json
 cat data.csv | ohlc-resample --input-format csv
 ```
 
-The CLI supports three types of pipe input:
+The CLI supports two types of pipe input:
 1. JSON files/strings with OHLCV objects
 2. CSV files/strings with headers (time,open,high,low,close,volume)
-3. Raw CSV text without headers (6 comma-separated numbers per line)
-
-Example of raw CSV text input:
-```bash
-# Single line
-echo '1609459200000,100,105,95,102,1000' | ohlc-resample
-
-# Multiple lines
-echo -e '1609459200000,100,105,95,102,1000\n1609459260000,102,107,101,106,1200' | ohlc-resample
-```
-
-### Options
-
-- `-i, --input <file>`: Input file path (CSV or JSON)
-- `-o, --output <file>`: Output file path (optional, defaults to stdout)
-- `-f, --format <format>`: Output format (csv or json, default: csv)
-- `-if, --input-format <format>`: Input format when using pipe (csv, json, or auto, default: auto)
-- `-b, --base-timeframe <seconds>`: Base timeframe in seconds (default: 60)
-- `-n, --new-timeframe <seconds>`: New timeframe in seconds (default: 300)
-- `-h, --help`: Display help information
-- `-V, --version`: Display version information
 
 ### Examples
 
 ```bash
 # Resample 1-minute data to 5-minute candles
-ohlc-resample -i data.csv
+ohlc-resample -i data.csv -b 60 -n 300
 
-# Resample 1-minute data to 15-minute candles
-ohlc-resample -i data.csv -b 60 -n 900
+# Convert CSV to JSON format
+ohlc-resample -i data.csv -f json
 
-# Convert CSV to JSON
-ohlc-resample -i data.csv -o data.json -f json
+# Pipe data and save to file
+cat data.csv | ohlc-resample -o output.json
 
-# Pipe CSV data and save as JSON
-cat data.csv | ohlc-resample -o output.json -f json
-
-# Pipe JSON data with forced format
-cat data.json | ohlc-resample --input-format json -o output.csv -f csv
+# Resample with custom timeframes and save as CSV
+ohlc-resample -i data.json -b 300 -n 3600 -f csv -o output.csv
 ```
 
 ## Contributors
