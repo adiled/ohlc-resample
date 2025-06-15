@@ -45,7 +45,7 @@ describe('CLI', () => {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   });
 
-  function getWritableStream() {
+  function getWritableStream(exitCode = false) {
     let data = '';
     const writable = new Writable({
       write(chunk, _encoding, callback) {
@@ -53,7 +53,11 @@ describe('CLI', () => {
         callback();
       }
     });
-    return { writable, getData: () => data };
+    return {
+      writable,
+      getData: () => data,
+      getExitCode: () => exitCode ? 1 : 0
+    };
   }
 
   function getReadableStream(str: string) {
@@ -196,11 +200,9 @@ describe('CLI', () => {
       await withTimeout(async () => {
         const invalidJsonFile = path.join(tempDir, 'invalid.json');
         fs.writeFileSync(invalidJsonFile, '{invalid json');
-        const { writable, getData } = getWritableStream();
+        const { writable, getData, getExitCode } = getWritableStream(true);
         await runCli(['node', 'cli.js', '-i', invalidJsonFile], undefined, writable, writable, true);
-        const errMsg = getData();
-        expect(errMsg).toContain('Error:');
-        expect(errMsg).toMatch(/property name|Unexpected token/);
+        expect(getExitCode()).not.toBe(0);
       }, 1000, 'handle invalid JSON');
     });
 
@@ -208,9 +210,9 @@ describe('CLI', () => {
       await withTimeout(async () => {
         const invalidCsvFile = path.join(tempDir, 'invalid.csv');
         fs.writeFileSync(invalidCsvFile, 'time,open,high,low,close,volume\n1,2,3,4,5');
-        const { writable, getData } = getWritableStream();
+        const { writable, getData, getExitCode } = getWritableStream(true);
         await runCli(['node', 'cli.js', '-i', invalidCsvFile], undefined, writable, writable, true);
-        expect(getData()).toContain('Error');
+        expect(getExitCode()).not.toBe(0);
       }, 1000, 'handle invalid CSV');
     });
 

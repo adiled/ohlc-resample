@@ -66,36 +66,55 @@ export async function runCli(
       const inPath = path.resolve(filePath);
       if (inFormat === 'csv') {
         return await new Promise((resolve, reject) => {
-          const results: IOHLCV[] = [];
-          let hadData = false;
-          const stream = fs.createReadStream(inPath)
+          const rows: any[] = [];
+          let errored = false;
+          const fileStream = fs.createReadStream(inPath)
             .on('error', (err: any) => {
+              if (errored) return;
+              errored = true;
               const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
               reject(new Error(msg));
-            })
-            .pipe(csv.parse({ headers: true }))
+            });
+          const csvStream = csv.parse({ headers: true })
             .on('data', (row) => {
-              hadData = true;
-              results.push({
+              if (errored) return;
+              rows.push(row);
+            })
+            .on('end', () => {
+              if (errored) return;
+              if (rows.length === 0) {
+                errored = true;
+                reject(new Error('Error: No valid CSV data found'));
+                return;
+              }
+              const requiredFields = ['time', 'open', 'high', 'low', 'close', 'volume'];
+              for (const row of rows) {
+                const missingFields = requiredFields.filter(field => row[field] === undefined);
+                if (missingFields.length > 0) {
+                  errored = true;
+                  fileStream.destroy();
+                  csvStream.destroy();
+                  reject(new Error('Error: Missing required fields in CSV: ' + missingFields.join(', ')));
+                  return;
+                }
+              }
+              const results = rows.map(row => ({
                 time: Number(row.time),
                 open: Number(row.open),
                 high: Number(row.high),
                 low: Number(row.low),
                 close: Number(row.close),
                 volume: Number(row.volume)
-              });
-            })
-            .on('end', () => {
-              if (!hadData) {
-                reject(new Error('Error: No valid CSV data found'));
-              } else {
-                resolve(results);
-              }
+              }));
+              resolve(results);
             })
             .on('error', (err: any) => {
+              if (errored) return;
+              errored = true;
               const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
               reject(new Error(msg));
             });
+          fileStream.pipe(csvStream);
         });
       } else {
         const inBuffer = await fs.promises.readFile(inPath);
@@ -211,6 +230,7 @@ export async function runCli(
   } catch (error: unknown) {
     stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
     process.exitCode = 1;
+    return;
   }
 }
 
