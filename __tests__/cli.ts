@@ -279,5 +279,72 @@ describe('CLI', () => {
         .rejects
         .toThrow();
     });
+
+    it('should handle CSV text without headers', async () => {
+      const csvText = '1609459200000,100,105,95,102,1000\n1609459260000,102,107,101,106,1200';
+      const textPath = path.join(tempDir, 'text.txt');
+      await fs.promises.writeFile(textPath, csvText);
+      
+      const { stdout } = await execAsync(`cat ${textPath} | node dist/cli.js`);
+      const result = JSON.parse(stdout);
+      expect(result).toHaveLength(1); // Resampled to 5-minute candle
+      expect(result[0]).toMatchObject({
+        time: 1609459200000,
+        open: 100,
+        high: 107,
+        low: 95,
+        close: 106,
+        volume: 2200
+      });
+    });
+
+    it('should handle CSV text with headers', async () => {
+      const csvText = 'time,open,high,low,close,volume\n1609459200000,100,105,95,102,1000\n1609459260000,102,107,101,106,1200';
+      const textPath = path.join(tempDir, 'text.txt');
+      await fs.promises.writeFile(textPath, csvText);
+      
+      const { stdout } = await execAsync(`cat ${textPath} | node dist/cli.js`);
+      const result = JSON.parse(stdout);
+      expect(result).toHaveLength(1); // Resampled to 5-minute candle
+      expect(result[0]).toMatchObject({
+        time: 1609459200000,
+        open: 100,
+        high: 107,
+        low: 95,
+        close: 106,
+        volume: 2200
+      });
+    });
+
+    it('should handle JSON text', async () => {
+      const jsonText = JSON.stringify([
+        { time: 1609459200000, open: 100, high: 105, low: 95, close: 102, volume: 1000 },
+        { time: 1609459260000, open: 102, high: 107, low: 101, close: 106, volume: 1200 }
+      ]);
+      const textPath = path.join(tempDir, 'text.txt');
+      await fs.promises.writeFile(textPath, jsonText);
+      
+      const { stdout } = await execAsync(`cat ${textPath} | node dist/cli.js`);
+      const result = JSON.parse(stdout);
+      expect(result).toHaveLength(1); // Resampled to 5-minute candle
+      expect(result[0]).toMatchObject({
+        time: 1609459200000,
+        open: 100,
+        high: 107,
+        low: 95,
+        close: 106,
+        volume: 2200
+      });
+    });
+
+    it('should error on invalid CSV text', async () => {
+      const invalidText = 'invalid,data\n1,2,3,4,5';
+      const textPath = path.join(tempDir, 'text.txt');
+      await fs.promises.writeFile(textPath, invalidText);
+      
+      await expect(execAsync(`cat ${textPath} | node dist/cli.js`))
+        .rejects
+        .toThrow('Could not detect input format');
+    });
   });
 }); 

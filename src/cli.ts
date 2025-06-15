@@ -30,8 +30,18 @@ function detectFormat(data: string): 'csv' | 'json' {
   } catch {
     // If JSON parsing fails, check if it looks like CSV
     const firstLine = data.split('\n')[0].trim();
-    if (firstLine.includes(',') && firstLine.toLowerCase().includes('time')) {
-      return 'csv';
+    if (firstLine.includes(',')) {
+      // Check if it has the expected OHLCV headers
+      const headers = firstLine.toLowerCase().split(',');
+      if (headers.includes('time') && headers.includes('open') && 
+          headers.includes('high') && headers.includes('low') && 
+          headers.includes('close') && headers.includes('volume')) {
+        return 'csv';
+      }
+      // If it's just comma-separated numbers, treat as CSV without headers
+      if (headers.length === 6 && headers.every(h => !isNaN(Number(h)))) {
+        return 'csv';
+      }
     }
     throw new Error('Could not detect input format. Please specify --input-format');
   }
@@ -86,7 +96,13 @@ async function processInput(input: string | NodeJS.ReadableStream): Promise<IOHL
             } else {
               // CSV format
               const results: IOHLCV[] = [];
-              csv.parseString(data, { headers: true })
+              const lines = data.trim().split('\n');
+              const hasHeaders = lines[0].toLowerCase().includes('time');
+              
+              const csvData = hasHeaders ? data : 
+                'time,open,high,low,close,volume\n' + data;
+              
+              csv.parseString(csvData, { headers: true })
                 .on('data', (row) => {
                   results.push({
                     time: Number(row.time),

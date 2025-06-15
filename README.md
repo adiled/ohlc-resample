@@ -226,10 +226,25 @@ You can pipe data into the CLI from other commands. The format is automatically 
 # Auto-detect format
 cat data.json | ohlc-resample
 cat data.csv | ohlc-resample
+echo '1609459200000,100,105,95,102,1000' | ohlc-resample
 
 # Force specific format
 cat data.json | ohlc-resample --input-format json
 cat data.csv | ohlc-resample --input-format csv
+```
+
+The CLI supports three types of pipe input:
+1. JSON files/strings with OHLCV objects
+2. CSV files/strings with headers (time,open,high,low,close,volume)
+3. Raw CSV text without headers (6 comma-separated numbers per line)
+
+Example of raw CSV text input:
+```bash
+# Single line
+echo '1609459200000,100,105,95,102,1000' | ohlc-resample
+
+# Multiple lines
+echo -e '1609459200000,100,105,95,102,1000\n1609459260000,102,107,101,106,1200' | ohlc-resample
 ```
 
 ### Options
