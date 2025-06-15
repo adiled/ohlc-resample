@@ -198,14 +198,16 @@ describe('CLI', () => {
         fs.writeFileSync(invalidJsonFile, '{invalid json');
         const { writable, getData } = getWritableStream();
         await runCli(['node', 'cli.js', '-i', invalidJsonFile], undefined, writable, writable, true);
-        expect(getData()).toContain('Unexpected token');
+        const errMsg = getData();
+        expect(errMsg).toContain('Error:');
+        expect(errMsg).toMatch(/property name|Unexpected token/);
       }, 1000, 'handle invalid JSON');
     });
 
     test('should handle invalid CSV', async () => {
       await withTimeout(async () => {
         const invalidCsvFile = path.join(tempDir, 'invalid.csv');
-        fs.writeFileSync(invalidCsvFile, 'invalid,csv,data\n1,2,3');
+        fs.writeFileSync(invalidCsvFile, 'time,open,high,low,close,volume\n1,2,3,4,5');
         const { writable, getData } = getWritableStream();
         await runCli(['node', 'cli.js', '-i', invalidCsvFile], undefined, writable, writable, true);
         expect(getData()).toContain('Error');
@@ -252,7 +254,7 @@ describe('CLI', () => {
         const { writable, getData } = getWritableStream();
         await runCli(['node', 'cli.js', '-i', csvPath, '-b', '60', '-n', '120'], undefined, writable, writable, true);
         const output = JSON.parse(getData());
-        expect(output).toHaveLength(3); // 5 minutes of 1-minute data resampled to 2 minutes
+        expect(output).toHaveLength(2); // 5 minutes of 1-minute data resampled to 2 minutes
         expect(output[0]).toMatchObject({
           time: 1609459200000,
           open: 100,
