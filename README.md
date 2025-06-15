@@ -176,6 +176,78 @@ const tickChart = resampleTicksByCount(airbnb_ticks, {
 });
 ```
 
+## CLI Usage
+
+The package includes a command-line interface for resampling OHLCV data. You can use it directly with `npx`:
+
+```sh
+npx ohlc-resample [options]
+```
+
+### Options
+
+- `-i, --input <path>`: Input file path (CSV or JSON) or use pipe
+- `-o, --output <path>`: Output file path (CSV or JSON) or use pipe
+- `-f, --format <format>`: Output format (csv or json), defaults to csv
+- `-b, --base-timeframe <seconds>`: Base timeframe in seconds, defaults to 60
+- `-n, --new-timeframe <seconds>`: New timeframe in seconds, defaults to 300
+- `-V, --version`: Show version number
+- `-h, --help`: Show help
+
+### Examples
+
+**Read from file and output to stdout:**
+```sh
+npx ohlc-resample -i data.csv
+```
+
+**Read from file and write to file:**
+```sh
+npx ohlc-resample -i data.csv -o resampled.json -f json
+```
+
+**Use pipe for input:**
+```sh
+cat data.csv | npx ohlc-resample
+```
+
+**Use pipe for output:**
+```sh
+npx ohlc-resample -i data.csv | grep "2023"
+```
+
+**Custom timeframes:**
+```sh
+npx ohlc-resample -i data.csv -b 60 -n 300
+```
+
+### Input Format
+
+The CLI accepts both CSV and JSON input formats:
+
+**CSV Format:**
+```csv
+time,open,high,low,close,volume
+1609459200000,100,105,95,102,1000
+1609462800000,102,107,101,106,1200
+```
+
+**JSON Format:**
+```json
+[
+  {
+    "time": 1609459200000,
+    "open": 100,
+    "high": 105,
+    "low": 95,
+    "close": 102,
+    "volume": 1000
+  }
+]
+```
+
+Note: All timestamps must be in milliseconds.
+
 ## Contributors
 
 👤 **Adil Shaikh <hello@adils.me> (https://adils.me)**
