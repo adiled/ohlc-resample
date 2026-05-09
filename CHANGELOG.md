@@ -25,6 +25,7 @@ A backward-compatible feature release. The legacy `default` export (with the `re
 - Dropped `coveralls` from `prepublishOnly` (was guaranteed to fail without a token).
 - `prebuild` now cleans `dist/` (was incorrectly cleaning `build/`).
 - CI workflow updated to trigger on `main` and run Node 20.x / 22.x (was `master` + Node 10/12).
+- New tag-triggered `publish.yml` workflow: pushing a `v*` tag runs build + tests, then `pnpm publish` with [npm provenance](https://docs.npmjs.com/generating-provenance-statements). Requires an `NPM_TOKEN` repo secret (npm "Automation" granular token).
 - Removed obsolete `.npmignore` (superseded by `package.json#files`).
 
 ### Internal (not part of the public API)
