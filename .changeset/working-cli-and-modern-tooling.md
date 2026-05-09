@@ -10,7 +10,7 @@ Working CLI, vitest, modernized tooling. Closes #8.
 
 **Distribution**
 
-- New `install.sh` for non-Node users: `curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh` installs a self-contained CLI binary (no Node.js required at install or runtime). Per-platform binaries are built via `bun build --compile` and attached to the GitHub Release: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `windows-x64`.
+- New `install.sh` for non-Node users: `curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh`. The installer uses your existing Node ≥22.12 if present; otherwise it downloads the official Node binary distribution from nodejs.org into `~/.ohlc/runtime/` and uses that. The package itself is the only release artifact — no per-platform binaries.
 
 **CLI** (was a non-functional stub in 1.x; now ships)
 
