@@ -6,6 +6,11 @@ import { program as commanderProgram } from 'commander';
 import { IOHLCV, OHLCV } from './types';
 import { resampleOhlcv } from './lib';
 
+// Read version from package.json so there's a single source of truth.
+// `dist/cli.js` is one level deep; `../package.json` resolves to the
+// installed package's manifest both during dev and post-install.
+const { version: PACKAGE_VERSION } = require('../package.json') as { version: string };
+
 type Shape = 'object' | 'array';
 type InputFormat = 'csv' | 'json';
 type InputFormatOption = InputFormat | 'auto';
@@ -169,7 +174,7 @@ export async function runCli(
     .option('-s, --shape <shape>', 'Output shape for JSON (object, array, auto)', 'auto')
     .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
     .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
-    .version('2.0.0');
+    .version(PACKAGE_VERSION);
 
   program.parse(argv);
   program.showHelpAfterError();
