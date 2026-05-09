@@ -14,7 +14,7 @@
     "prebuild": "rimraf dist",
     "build": "tsc --build",
     "build:check": "node -e \"require('./dist')\"",
-    "prepublishOnly": "npm test && npm run build && npm run build:check",
+    "prepublishOnly": "pnpm test && pnpm run build && pnpm run build:check",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

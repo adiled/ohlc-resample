@@ -13,10 +13,7 @@ Resample (inter-convert) trade, ticks or OHLCV data to different time frames
   <a href="https://github.com/adiled/ohlc-resample/graphs/commit-activity" target="_blank">
     <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" />
   </a>
-  <a href="https://coveralls.io/github/adiled/ohlc-resample?branch=master" target="_blank">
-    <img alt="Coverage Status" src="https://coveralls.io/repos/github/adiled/ohlc-resample/badge.svg?branch=master">
-  </a>
-  <a href="https://github.com/adiled/ohlc-resample/blob/master/LICENSE" target="_blank">
+  <a href="https://github.com/adiled/ohlc-resample/blob/main/COPYING" target="_blank">
     <img alt="License: LGPL--3.0" src="https://img.shields.io/github/license/adiled/ohlc-resample" />
   </a>
 </p>
@@ -306,12 +303,12 @@ Trivial changes (typos, internal refactors that don't affect users) don't need a
 
 ## 🤝 Contributing
 
-Contributions, issues and feature requests are welcome!<br />Feel free to check [issues page](https://github.com/adiled/ohlc-resample/issues). You can also take a look at the [contributing guide](https://github.com/adiled/ohlc-resample/blob/master/CONTRIBUTING.md).
+Contributions, issues and feature requests are welcome!<br />Feel free to check the [issues page](https://github.com/adiled/ohlc-resample/issues).
 
 ### Run tests
 
 ```sh
-yarn test
+pnpm test
 ```
 
 ## Show your support
@@ -321,4 +318,4 @@ Give a ⭐️ if this project helped you!
 ## 📝 License
 
 Copyright © 2022 [Adil Shaikh <hello@adils.me> (https://adils.me)](https://github.com/adiled).<br />
-This project is [LGPL--3.0](https://github.com/adiled/ohlc-resample/blob/master/LICENSE) licensed.
+This project is [LGPL--3.0](https://github.com/adiled/ohlc-resample/blob/main/COPYING) licensed.
