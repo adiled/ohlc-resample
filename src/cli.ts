@@ -162,7 +162,6 @@ export async function runCli(
   stdin: NodeJS.ReadableStream = process.stdin,
   stdout: NodeJS.WritableStream = process.stdout,
   stderr: NodeJS.WritableStream = process.stderr,
-  isTTY: boolean = process.stdin.isTTY,
 ): Promise<void> {
   const program = commanderProgram.createCommand();
   program
@@ -233,7 +232,10 @@ export async function runCli(
   }
 
   try {
-    const input = isTTY && options.input
+    // `-i` always wins. Only fall back to stdin when no input file is given.
+    // Don't gate on `isTTY` — that breaks scripted/CI invocations where stdin
+    // is not a TTY but `-i` is the intended source.
+    const input = options.input
       ? await readFileData(options.input)
       : await readPipeData(stdin);
 
