@@ -1,5 +1,6 @@
 "use strict";
 
+import { test, expect } from "vitest";
 import { resampleOhlcv } from "../src/index";
 import type { IOHLCV, OHLCV } from "../src/types";
 

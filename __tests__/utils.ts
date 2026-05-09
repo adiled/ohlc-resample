@@ -1,20 +1,32 @@
+import { describe, it, expect, vi } from 'vitest';
 import { performance } from 'perf_hooks';
 
+/**
+ * Wrap a test function with a soft timeout that rejects past `timeoutMs` and
+ * warns when the function runs past 80% of the budget. Once timed out, any
+ * later resolution from the wrapped function is ignored, so a slow `testFn`
+ * cannot log after the test has torn down.
+ */
 export function withTimeout<T>(
   testFn: () => Promise<T>,
   timeoutMs: number = 5000,
   testName: string = 'unnamed test'
 ): Promise<T> {
   const startTime = performance.now();
-  
+  let settled = false;
+
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       const elapsed = performance.now() - startTime;
       reject(new Error(`Test "${testName}" took ${elapsed.toFixed(2)}ms (exceeded ${timeoutMs}ms timeout)`));
     }, timeoutMs);
 
     testFn()
       .then((result) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeoutId);
         const elapsed = performance.now() - startTime;
         if (elapsed > timeoutMs * 0.8) {
@@ -23,6 +35,8 @@ export function withTimeout<T>(
         resolve(result);
       })
       .catch((error) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeoutId);
         reject(error);
       });
@@ -30,16 +44,12 @@ export function withTimeout<T>(
 }
 
 describe('withTimeout utility', () => {
-  it('should resolve when test completes within timeout', async () => {
-    const result = await withTimeout(
-      async () => 'success',
-      1000,
-      'fast test'
-    );
+  it('resolves when test completes within timeout', async () => {
+    const result = await withTimeout(async () => 'success', 1000, 'fast test');
     expect(result).toBe('success');
   });
 
-  it('should reject when test exceeds timeout', async () => {
+  it('rejects when test exceeds timeout', async () => {
     await expect(withTimeout(
       async () => {
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -50,9 +60,9 @@ describe('withTimeout utility', () => {
     )).rejects.toThrow('exceeded 1000ms timeout');
   });
 
-  it('should warn when test takes more than 80% of timeout', async () => {
-    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-    
+  it('warns when test takes more than 80% of timeout', async () => {
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     await withTimeout(
       async () => {
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -65,4 +75,4 @@ describe('withTimeout utility', () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('80% of 1000ms timeout'));
     consoleSpy.mockRestore();
   });
-}); 
+});

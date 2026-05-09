@@ -21,6 +21,7 @@
 - The package now also re-exports types (`IOHLCV`, `OHLCV`, `TradeTick`, etc.) from the entrypoint.
 
 ### Build & tooling
+- **Test runner: jest → vitest.** Replaces `jest` + `ts-jest` + `@types/jest` with `vitest` + `@vitest/coverage-v8`. Cold-start test time drops from ~9s to ~2.5s. Removed the `ts-jest` `ignoreCodes: [2345]` workaround. Added `test:watch` and `test:coverage` scripts; the default `test` script no longer auto-collects coverage on every run.
 - Dropped `fast-csv` dependency (1.x branch removed it; 2.0 ships clean).
 - Dropped unused `chalk` dep.
 - Moved `ts-node` to `devDependencies`.

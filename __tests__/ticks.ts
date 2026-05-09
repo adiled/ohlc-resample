@@ -1,5 +1,6 @@
 "use strict";
 
+import { test, expect } from "vitest";
 import { resampleTicksByTime, resampleTicksByCount } from "../src/index";
 import type { Trade } from "../src/types";
 

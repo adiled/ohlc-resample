@@ -15,7 +15,9 @@
     "build": "tsc --build",
     "build:check": "node -e \"require('./dist')\"",
     "prepublishOnly": "npm test && npm run build && npm run build:check",
-    "test": "jest"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "bin": {
     "ohlc": "./dist/cli.js"
@@ -43,14 +45,12 @@
   },
   "homepage": "https://github.com/adiled/ohlc-resample#readme",
   "devDependencies": {
-    "@types/jest": "^29.5.14",
     "@types/lodash": "^4.14.173",
     "@types/node": "^24.0.1",
-    "jest": ">=27.2.1",
+    "@vitest/coverage-v8": "^2.1.0",
     "rimraf": "^6.0.1",
-    "ts-jest": ">=25.1.0",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.0"
   },
   "dependencies": {
     "commander": "^14.0.0",
