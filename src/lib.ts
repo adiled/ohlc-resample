@@ -26,6 +26,12 @@ export function resampleOhlcv(
   ohlcvData: IOHLCV[],
   options: { baseTimeframe: number; newTimeframe: number }
 ): IOHLCV[];
+// 1.x BC overload: a union-typed argument still resolves cleanly. Keep this
+// even though the narrower overloads above are preferred for new code.
+export function resampleOhlcv(
+  ohlcvData: OHLCV[] | IOHLCV[],
+  options: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[] | IOHLCV[];
 export function resampleOhlcv(
   ohlcvData: OHLCV[] | IOHLCV[],
   { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number; newTimeframe: number }
