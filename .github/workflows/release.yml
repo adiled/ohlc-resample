@@ -1,22 +1,23 @@
 # Release workflow.
 #
-# Fires on every push to `main`. Runs the changesets action, which has two modes:
+# Fires on every push to `main`. The decision to release is driven entirely by
+# what's in `.changeset/`:
 #
-#   1. If pending `.changeset/*.md` files exist on `main`, opens (or updates) a
-#      "Version Packages" PR that bumps `package.json#version`, regenerates
-#      `CHANGELOG.md`, and deletes the consumed changeset files.
+#   - If pending `.changeset/*.md` files exist, the workflow runs the changesets
+#     CLI to bump `package.json#version`, regenerate `CHANGELOG.md`, and delete
+#     the consumed changeset files. It commits and pushes those changes to main
+#     (with `[skip ci]` so the bot's own commit doesn't re-trigger this workflow),
+#     then publishes to npm with provenance, tags `vX.Y.Z`, and creates a
+#     matching GitHub Release.
 #
-#   2. If there are no pending changesets (i.e. the Version Packages PR was just
-#      merged), runs `pnpm release` which publishes to npm with provenance.
-#      The action also creates a matching GitHub Release with the CHANGELOG
-#      entry as the body.
+#   - If there are no pending changesets, the workflow exits cleanly. Nothing
+#     to release.
+#
+# All of this happens in a single workflow run from one push to main.
 #
 # One-time setup:
 #   - In repo Settings → Secrets and variables → Actions, add `NPM_TOKEN`
 #     (an npm "Granular Access Token" with read+write on this package).
-#   - In repo Settings → Actions → General, ensure the workflow has permission
-#     to create pull requests ("Allow GitHub Actions to create and approve pull
-#     requests").
 
 name: Release
 
@@ -31,13 +32,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # tag pushes, CHANGELOG commits, GH Release creation
-      pull-requests: write     # opening the Version Packages PR
+      contents: write          # push the bump commit + tag, create GH Release
       id-token: write          # npm provenance (OIDC)
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0       # full history; changesets needs it to diff branches
+          fetch-depth: 0       # full history; changesets needs it
 
       - uses: pnpm/action-setup@v4
         with:
@@ -55,15 +55,43 @@ jobs:
 
       - run: pnpm test
 
-      - name: Create release PR or publish
-        uses: changesets/action@v1
-        with:
-          publish: pnpm release
-          version: pnpm changeset version
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
-          createGithubReleases: true
+      - name: Apply pending changesets and publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Consume any pending changesets — bumps version, updates CHANGELOG,
+          # deletes the consumed .changeset/*.md files. No-op if none pending.
+          pnpm changeset version
+
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No pending changesets — nothing to release."
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -m "chore(release): ${TAG} [skip ci]"
+          git push origin HEAD:main
+
+          # Publish first so a push success + publish failure doesn't leave a
+          # phantom version on main. (npm rejects duplicate versions, so a
+          # retried run is safe.)
+          pnpm publish --no-git-checks --access public --provenance
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+          # Extract the just-prepended CHANGELOG entry (everything between the
+          # first `## ` heading and the next one, minus the heading itself) and
+          # use it as the GitHub Release body.
+          awk '/^## /{i++} i==1' CHANGELOG.md | tail -n +2 > /tmp/release-notes.md
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file /tmp/release-notes.md

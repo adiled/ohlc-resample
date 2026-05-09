@@ -90,3 +90,7 @@ typings/
 build/
 dist/
 .coveralls.yml
+
+# Local agent context — kept out of the repo
+AGENTS.md
+CLAUDE.md

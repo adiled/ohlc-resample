@@ -280,15 +280,17 @@ ohlc-resample -i data.json -b 300 -n 3600 -f csv -o output.csv
 
 ## Releasing
 
-Releases are managed by [Changesets](https://github.com/changesets/changesets). The flow:
+Releases are driven by [Changesets](https://github.com/changesets/changesets). Any push to `main` that includes a file under `.changeset/` will trigger a release.
 
 1. Make a code change.
-2. `pnpm changeset` — pick the bump type (patch / minor / major) and write a one-line summary. (Or write the file by hand under `.changeset/`; see `.changeset/README.md` for the format.)
-3. Commit both the code and the changeset, open a PR.
-4. After the PR merges, the `Release` workflow opens a "Version Packages" PR with the version bump and `CHANGELOG.md` entry.
-5. Merging that PR publishes to npm with provenance, creates a `vX.Y.Z` git tag, and creates a GitHub Release — all in one workflow run.
+2. Add a changeset:
+   - `pnpm changeset` (interactive prompt), **or** hand-author a markdown file under `.changeset/` (see `.changeset/README.md` for the format).
+3. Commit code + changeset, push to `main` (or merge a PR — both work).
+4. CI consumes the changeset, bumps `package.json#version`, regenerates `CHANGELOG.md`, commits the bump back to `main` (with `[skip ci]`), then publishes to npm with provenance, tags `vX.Y.Z`, and creates a matching GitHub Release. All in one workflow run.
 
-Trivial changes (typos, internal refactors that don't affect users) don't need a changeset.
+Pushes without a changeset don't release. Trivial changes (typos, internal refactors that don't affect users) don't need one.
+
+After a release fires, your local `main` is one commit behind the bot's bump commit — `git pull` to catch up.
 
 **One-time setup before the first release:** add `NPM_TOKEN` (an npm "Granular Access Token" with read+write on this package) as a repo secret on GitHub.
 
