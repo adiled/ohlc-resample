@@ -3,59 +3,54 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { program as commanderProgram } from 'commander';
-import { IOHLCV } from './types';
+import { IOHLCV, OHLCV } from './types';
 import { resampleOhlcv } from './lib';
 
+type Shape = 'object' | 'array';
+type InputFormat = 'csv' | 'json';
+type InputFormatOption = InputFormat | 'auto';
+type ShapeOption = Shape | 'auto';
+
+const REQUIRED_FIELDS = ['time', 'open', 'high', 'low', 'close', 'volume'] as const;
+
 /**
- * Parse CSV data containing OHLCV (Open, High, Low, Close, Volume) information
- * into a structured array of objects. Each row in the CSV should contain
- * timestamp and OHLCV values in the correct order.
- * 
- * @throws Error if the CSV is empty or has invalid format
+ * Parse a CSV string of OHLCV rows into `IOHLCV[]`. Accepts an optional
+ * header row matching the canonical field order; otherwise treats the first
+ * line as data. Malformed rows (wrong column count, missing values, or
+ * non-numeric cells) are skipped and counted in `skipped`.
+ *
+ * @throws if the input is empty.
  */
-export function parseCSV(
-  /** The CSV data string to parse */
-  data: string
-): IOHLCV[] {
+export function parseCSV(data: string): { rows: IOHLCV[]; skipped: number } {
   const trimmed = data.trim();
   if (!trimmed) {
     throw new Error('Error: CSV must have at least one row');
   }
   const lines = trimmed.split('\n');
-  let headers: string[];
-  let startIndex: number;
-  const requiredFields = ['time', 'open', 'high', 'low', 'close', 'volume'];
 
-  // If the first line matches the required fields, treat as header
-  const firstLine = lines[0].trim();
-  const firstLineFields = firstLine.split(',').map(h => h.trim());
-  if (requiredFields.every((f, i) => firstLineFields[i] === f)) {
-    headers = firstLineFields;
-    startIndex = 1;
-  } else {
-    headers = requiredFields;
-    startIndex = 0;
-  }
+  const firstLine = lines[0].trim().split(',').map(h => h.trim());
+  const hasHeader = REQUIRED_FIELDS.every((f, i) => firstLine[i] === f);
+  const headers = hasHeader ? firstLine : (REQUIRED_FIELDS as readonly string[]);
+  const startIndex = hasHeader ? 1 : 0;
 
   const rows: IOHLCV[] = [];
+  let skipped = 0;
+
   for (let i = startIndex; i < lines.length; i++) {
-    if (!lines[i].trim()) continue; // skip empty lines
-    const values = lines[i].split(',').map(v => v.trim());
-    if (values.length !== headers.length) {
-      // Skip lines that do not have exactly 5 commas (6 columns)
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = line.split(',').map(v => v.trim());
+    if (values.length !== headers.length) { skipped++; continue; }
+
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => { row[header] = values[index]; });
+
+    if (REQUIRED_FIELDS.some(f => row[f] === undefined || row[f] === '')) {
+      skipped++;
       continue;
     }
-    const row: any = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index];
-    });
-    const missingValues = requiredFields.filter(field => row[field] === undefined || row[field] === '');
-    if (missingValues.length > 0) {
-      // Skip lines with missing required values
-      continue;
-    }
-    // Skip lines with non-numeric values
-    if (isNaN(Number(row.time)) || isNaN(Number(row.open)) || isNaN(Number(row.high)) || isNaN(Number(row.low)) || isNaN(Number(row.close)) || isNaN(Number(row.volume))) {
+    if (REQUIRED_FIELDS.some(f => isNaN(Number(row[f])))) {
+      skipped++;
       continue;
     }
     rows.push({
@@ -64,193 +59,179 @@ export function parseCSV(
       high: Number(row.high),
       low: Number(row.low),
       close: Number(row.close),
-      volume: Number(row.volume)
+      volume: Number(row.volume),
     });
   }
-  return rows;
+  return { rows, skipped };
 }
 
 /**
- * Detect whether the input data contains CSV or JSON formatted OHLCV data.
- * The detection is based on the presence of JSON-specific characters and
- * structure.
- * 
- * @throws Error if the format cannot be detected
+ * Detect whether a string is JSON (array of objects or array of tuples) or
+ * CSV. JSON detection requires the value to parse and be an array.
+ *
+ * @throws if neither format is recognized.
  */
-export function detectFormat(
-  /** The input data string to analyze */
-  data: string
-): 'csv' | 'json' {
+export function detectFormat(data: string): InputFormat {
+  const trimmed = data.trim();
   try {
-    JSON.parse(data);
-    return 'json';
-  } catch {
-    const firstLine = data.split('\n')[0].trim();
-    // If the first line has exactly 5 commas, it's likely CSV (6 columns)
-    if ((firstLine.match(/,/g) || []).length === 5) {
-      return 'csv';
-    }
-    throw new Error('Could not detect input format. Please specify --input-format');
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return 'json';
+  } catch { /* fall through */ }
+  const firstLine = trimmed.split('\n')[0];
+  if ((firstLine.match(/,/g) || []).length === 5) return 'csv';
+  throw new Error('Could not detect input format. Please specify --input-format');
+}
+
+/** Detect whether a parsed JSON payload is tuple- or object-shaped. */
+function detectShape(data: unknown[]): Shape {
+  return data.length > 0 && Array.isArray(data[0]) ? 'array' : 'object';
+}
+
+const toObjectShape = (data: OHLCV[] | IOHLCV[]): IOHLCV[] => {
+  if (data.length > 0 && Array.isArray(data[0])) {
+    return (data as OHLCV[]).map(([time, open, high, low, close, volume]) => ({
+      time, open, high, low, close, volume,
+    }));
   }
+  return data as IOHLCV[];
+};
+
+const toArrayShape = (data: OHLCV[] | IOHLCV[]): OHLCV[] => {
+  if (data.length > 0 && !Array.isArray(data[0])) {
+    return (data as IOHLCV[]).map(({ time, open, high, low, close, volume }) =>
+      [time, open, high, low, close, volume] as OHLCV);
+  }
+  return data as OHLCV[];
+};
+
+/** Render OHLCV data as CSV text (with header). */
+function formatCSV(data: OHLCV[] | IOHLCV[]): string {
+  const rows = toArrayShape(data);
+  const lines = ['time,open,high,low,close,volume'];
+  for (const row of rows) lines.push(row.join(','));
+  return lines.join('\n');
+}
+
+/** Render OHLCV data as JSON text in the requested shape. */
+function formatJSON(data: OHLCV[] | IOHLCV[], shape: Shape): string {
+  const out = shape === 'array' ? toArrayShape(data) : toObjectShape(data);
+  return JSON.stringify(out, null, 2);
+}
+
+function prefixError(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : String(err);
+  return new Error(msg.startsWith('Error:') ? msg : `Error: ${msg}`);
+}
+
+interface ParsedInput {
+  data: IOHLCV[] | OHLCV[];
+  shape: Shape;
+}
+
+function parseInput(raw: string, format: InputFormat): ParsedInput {
+  if (format === 'csv') {
+    const { rows, skipped } = parseCSV(raw);
+    if (rows.length === 0) {
+      throw new Error('Error: no valid OHLCV rows found in input');
+    }
+    return { data: rows, shape: 'object' };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw prefixError(err);
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('Error: JSON input must be a non-empty array of OHLCV records');
+  }
+  return { data: parsed as IOHLCV[] | OHLCV[], shape: detectShape(parsed) };
 }
 
 /**
- * Process command-line arguments and execute the OHLCV resampling workflow.
- * Coordinates the data flow from input to output, applying the specified
- * resampling rules.
+ * Run the OHLCV resampling CLI. Streams and TTY flag are injectable for
+ * testing.
  */
 export async function runCli(
-  /** Command line arguments array */
   argv: string[],
-  /** Input stream (defaults to process.stdin) */
   stdin: NodeJS.ReadableStream = process.stdin,
-  /** Output stream (defaults to process.stdout) */
   stdout: NodeJS.WritableStream = process.stdout,
-  /** Error stream (defaults to process.stderr) */
   stderr: NodeJS.WritableStream = process.stderr,
-  /** Whether the input is a TTY (defaults to process.stdin.isTTY) */
-  isTTY: boolean = process.stdin.isTTY
+  isTTY: boolean = process.stdin.isTTY,
 ): Promise<void> {
   const program = commanderProgram.createCommand();
   program
     .description('Resample OHLCV between timeframes and file formats')
-    .option('-i, --input <char>', 'Input file path (csv, json) or use pipe')
-    .option('-o, --output <char>', 'Output file path (csv, json) or use pipe')
-    .option('-f, --format <char>', 'Output file format (csv, json)', 'json')
-    .option('--input-format <char>', 'Input format when using pipe (csv, json, auto)', 'auto')
+    .option('-i, --input <path>', 'Input file path (csv, json) or use pipe')
+    .option('-o, --output <path>', 'Output file path (csv, json) or use stdout')
+    .option('-f, --format <fmt>', 'Output format (csv, json)', 'json')
+    .option('--input-format <fmt>', 'Input format when piping (csv, json, auto)', 'auto')
+    .option('-s, --shape <shape>', 'Output shape for JSON (object, array, auto)', 'auto')
     .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
     .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
-    .version('1.3.0');
+    .version('2.0.0');
 
   program.parse(argv);
   program.showHelpAfterError();
-
   const options = program.opts();
 
-  /**
-   * Transform file contents into an array of OHLCV objects. Automatically
-   * detects and handles both CSV and JSON input formats.
-   * 
-   * @throws Error if the file cannot be read or parsed
-   */
-  async function readFileData(
-    /** Path to the input file */
-    filePath: string
-  ): Promise<IOHLCV[]> {
-    try {
-      const inFormat = path.extname(filePath).slice(1).toLowerCase();
-      if (!['csv', 'json'].includes(inFormat)) {
-        throw new Error('Only CSV and JSON files are accepted as input');
-      }
-      const inPath = path.resolve(filePath);
-      if (inFormat === 'csv') {
-        const data = await fs.promises.readFile(inPath, 'utf8');
-        return parseCSV(data);
-      } else {
-        const inBuffer = await fs.promises.readFile(inPath);
-        try {
-          return JSON.parse(inBuffer.toString());
-        } catch (err: any) {
-          const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-          throw new Error(msg);
-        }
-      }
-    } catch (err: any) {
-      const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-      throw new Error(msg);
+  async function readFileData(filePath: string): Promise<ParsedInput> {
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    if (!['csv', 'json'].includes(ext)) {
+      throw new Error('Only CSV and JSON files are accepted as input');
     }
+    let raw: string;
+    try {
+      raw = await fs.promises.readFile(path.resolve(filePath), 'utf8');
+    } catch (err) {
+      throw prefixError(err);
+    }
+    const parsed = parseInput(raw, ext as InputFormat);
+    if (ext === 'csv') {
+      const { skipped } = parseCSV(raw);
+      if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed CSV row(s)\n`);
+    }
+    return parsed;
   }
 
-  /**
-   * Transform stdin data into an array of OHLCV objects. Processes the
-   * input stream line by line, handling both CSV and JSON formats.
-   * 
-   * @throws Error if the data cannot be read or parsed
-   */
-  async function readPipeData(
-    /** The input stream to read from */
-    stdin: NodeJS.ReadableStream
-  ): Promise<IOHLCV[]> {
-    return new Promise((resolve, reject) => {
-      let data = '';
-      stdin.on('data', (chunk) => {
-        data += chunk;
-      });
-      stdin.on('end', () => {
-        try {
-          const inFormat = data.trim().startsWith('[') ? 'json' : 'csv';
-          if (inFormat === 'csv') {
-            resolve(parseCSV(data));
-          } else {
-            resolve(JSON.parse(data));
-          }
-        } catch (err: any) {
-          const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-          reject(new Error(msg));
-        }
-      });
-      stdin.on('error', (err: any) => {
-        const msg = err && err.message && typeof err.message === 'string' && err.message.startsWith('Error:') ? err.message : 'Error: ' + (err && err.message ? err.message : String(err));
-        reject(new Error(msg));
-      });
+  async function readPipeData(stream: NodeJS.ReadableStream): Promise<ParsedInput> {
+    const raw = await new Promise<string>((resolve, reject) => {
+      let buf = '';
+      stream.on('data', chunk => { buf += chunk; });
+      stream.on('end', () => resolve(buf));
+      stream.on('error', err => reject(prefixError(err)));
+    });
+    const requested = options.inputFormat as InputFormatOption;
+    const format: InputFormat = requested === 'auto' ? detectFormat(raw) : requested;
+    const parsed = parseInput(raw, format);
+    if (format === 'csv') {
+      const { skipped } = parseCSV(raw);
+      if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed CSV row(s)\n`);
+    }
+    return parsed;
+  }
+
+  async function writeOutput(
+    data: OHLCV[] | IOHLCV[],
+    format: 'csv' | 'json',
+    shape: Shape,
+    outputPath: string | undefined,
+  ): Promise<void> {
+    const text = format === 'csv' ? formatCSV(data) : formatJSON(data, shape);
+    if (outputPath) {
+      await fs.promises.writeFile(outputPath, text);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      stdout.write(text, err => (err ? reject(err) : resolve()));
     });
   }
 
-  /**
-   * Transform OHLCV data into the specified output format. Converts the
-   * array of objects into either CSV or JSON string representation.
-   */
-  async function writeOutput(
-    /** Array of OHLCV objects to write */
-    data: IOHLCV[],
-    /** Output format ('csv' or 'json') */
-    format: 'csv' | 'json',
-    /** Optional path to write the output file */
-    outputPath?: string,
-    /** Stream to write to if no outputPath is provided */
-    stdoutStream: NodeJS.WritableStream = process.stdout
-  ): Promise<void> {
-    if (outputPath) {
-      const outStream = fs.createWriteStream(outputPath);
-      await new Promise<void>((resolve, reject) => {
-        outStream.on('error', reject);
-        outStream.on('finish', resolve);
-        if (format === 'json') {
-          outStream.write(JSON.stringify(data, null, 2), () => outStream.end());
-        } else {
-          outStream.write('time,open,high,low,close,volume\n');
-          data.forEach((row, idx) => {
-            const line = `${row.time},${row.open},${row.high},${row.low},${row.close},${row.volume}`;
-            if (idx < data.length - 1) {
-              outStream.write(line + '\n');
-            } else {
-              outStream.write(line);
-            }
-          });
-          outStream.end();
-        }
-      });
-    } else {
-      if (format === 'json') {
-        stdoutStream.write(JSON.stringify(data, null, 2));
-      } else {
-        stdoutStream.write('time,open,high,low,close,volume\n');
-        data.forEach((row, idx) => {
-          const line = `${row.time},${row.open},${row.high},${row.low},${row.close},${row.volume}`;
-          if (idx < data.length - 1) {
-            stdoutStream.write(line + '\n');
-          } else {
-            stdoutStream.write(line);
-          }
-        });
-      }
-    }
-  }
-
   try {
-    const data = isTTY && options.input
+    const input = isTTY && options.input
       ? await readFileData(options.input)
       : await readPipeData(stdin);
+
     const baseTimeframe = parseInt(options.baseTimeframe, 10);
     const newTimeframe = parseInt(options.newTimeframe, 10);
     if (isNaN(baseTimeframe) || isNaN(newTimeframe)) {
@@ -259,23 +240,21 @@ export async function runCli(
     if (newTimeframe <= baseTimeframe) {
       throw new Error('New timeframe must be greater than base timeframe');
     }
-    const resampledData = resampleOhlcv(data, { baseTimeframe, newTimeframe }) as IOHLCV[];
-    await writeOutput(resampledData, options.format, options.output, stdout);
+
+    const resampled = resampleOhlcv(input.data as IOHLCV[], { baseTimeframe, newTimeframe });
+
+    const requestedShape = options.shape as ShapeOption;
+    const outputShape: Shape = requestedShape === 'auto' ? input.shape : requestedShape;
+
+    await writeOutput(resampled, options.format, outputShape, options.output);
   } catch (error: unknown) {
     stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
     process.exitCode = 1;
-    return;
   }
 }
 
-// Only run if this is the entrypoint
 if (require.main === module) {
-  // Handle process termination
-  process.on('SIGINT', () => {
-    process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    process.exit(0);
-  });
+  process.on('SIGINT', () => process.exit());
+  process.on('SIGTERM', () => process.exit());
   runCli(process.argv);
 }

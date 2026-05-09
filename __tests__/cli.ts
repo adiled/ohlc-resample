@@ -1,404 +1,386 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { IOHLCV } from '../src/types';
-import { withTimeout } from './utils';
-import { runCli, parseCSV } from '../src/cli';
 import { Readable, Writable } from 'stream';
+import { IOHLCV, OHLCV } from '../src/types';
+import { withTimeout } from './utils';
+import { runCli, parseCSV, detectFormat } from '../src/cli';
 
 describe('CLI', () => {
   let tempDir: string;
   let testData: IOHLCV[];
+  let testDataArray: OHLCV[];
   let csvPath: string;
   let jsonPath: string;
+  let jsonArrayPath: string;
+
+  const expectedCandle = {
+    time: 1609459200000,
+    open: 100,
+    high: 108,
+    low: 95,
+    close: 103,
+    volume: 5000,
+  };
 
   beforeAll(() => {
-    // Create test data
     testData = [
       { time: 1609459200000, open: 100, high: 105, low: 95, close: 102, volume: 1000 },
       { time: 1609459260000, open: 102, high: 107, low: 101, close: 106, volume: 1200 },
       { time: 1609459320000, open: 106, high: 108, low: 104, close: 105, volume: 800 },
       { time: 1609459380000, open: 105, high: 106, low: 103, close: 104, volume: 900 },
-      { time: 1609459440000, open: 104, high: 105, low: 102, close: 103, volume: 1100 }
+      { time: 1609459440000, open: 104, high: 105, low: 102, close: 103, volume: 1100 },
     ];
+    testDataArray = testData.map(d =>
+      [d.time, d.open, d.high, d.low, d.close, d.volume] as OHLCV);
   });
 
   beforeEach(async () => {
-    // Create temp directory
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ohlc-resample-test-'));
-    
-    // Create test files
     csvPath = path.join(tempDir, 'test.csv');
     jsonPath = path.join(tempDir, 'test.json');
-    
-    // Write CSV file
+    jsonArrayPath = path.join(tempDir, 'test-array.json');
+
     const csvContent = 'time,open,high,low,close,volume\n' +
       testData.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n');
     await fs.promises.writeFile(csvPath, csvContent);
-    
-    // Write JSON file
     await fs.promises.writeFile(jsonPath, JSON.stringify(testData, null, 2));
+    await fs.promises.writeFile(jsonArrayPath, JSON.stringify(testDataArray, null, 2));
+
+    process.exitCode = 0;
   });
 
   afterEach(async () => {
-    // Clean up temp directory
     await fs.promises.rm(tempDir, { recursive: true, force: true });
+    process.exitCode = 0;
   });
 
-  function getWritableStream(exitCode = false) {
+  function captureWritable() {
     let data = '';
     const writable = new Writable({
       write(chunk, _encoding, callback) {
         data += chunk.toString();
         callback();
-      }
+      },
     });
-    return {
-      writable,
-      getData: () => data,
-      getExitCode: () => exitCode ? 1 : 0
-    };
+    return { writable, getData: () => data };
   }
 
-  function getReadableStream(str: string) {
+  function readableFromString(str: string) {
     return Readable.from([str]);
   }
 
   describe('File Input', () => {
-    test('should read CSV file', async () => {
+    test('reads CSV file', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', csvPath], undefined, writable, writable, true);
+        const { writable, getData } = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath], undefined, writable, err.writable, true);
         const output = JSON.parse(getData());
-        expect(output).toHaveLength(1); // Resampled to 5-minute candle
-        expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
       }, 1000, 'read CSV file');
     });
 
-    test('should read JSON file', async () => {
+    test('reads JSON file (object shape)', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', jsonPath], undefined, writable, writable, true);
+        const { writable, getData } = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonPath], undefined, writable, err.writable, true);
         const output = JSON.parse(getData());
-        expect(output).toHaveLength(1); // Resampled to 5-minute candle
-        expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'read JSON file');
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'read JSON object file');
     });
 
-    test('should handle invalid file format', async () => {
+    test('reads JSON file (array shape) and preserves shape on output', async () => {
+      await withTimeout(async () => {
+        const { writable, getData } = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonArrayPath], undefined, writable, err.writable, true);
+        const output = JSON.parse(getData());
+        expect(output).toHaveLength(1);
+        expect(Array.isArray(output[0])).toBe(true);
+        expect(output[0]).toEqual([1609459200000, 100, 108, 95, 103, 5000]);
+      }, 1000, 'read JSON array file');
+    });
+
+    test('rejects non-csv/json file extension', async () => {
       await withTimeout(async () => {
         const invalidFile = path.join(tempDir, 'test.txt');
         fs.writeFileSync(invalidFile, 'invalid data');
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', invalidFile], undefined, writable, writable, true);
-        expect(getData()).toContain('Only CSV and JSON files are accepted');
-      }, 1000, 'handle invalid file format');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', invalidFile], undefined, out.writable, err.writable, true);
+        expect(err.getData()).toContain('Only CSV and JSON files are accepted');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'reject invalid extension');
     });
   });
 
   describe('Pipe Input', () => {
-    test('should read from pipe', async () => {
+    test('reads CSV from pipe', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        const csvContent = fs.readFileSync(csvPath, 'utf8');
-        const stdin = getReadableStream(csvContent);
-        await runCli(['node', 'cli.js'], stdin, writable, writable, false);
-        const output = JSON.parse(getData());
-        expect(output).toHaveLength(1); // Resampled to 5-minute candle
-        expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'read from pipe');
+        const out = captureWritable();
+        const err = captureWritable();
+        const stdin = readableFromString(fs.readFileSync(csvPath, 'utf8'));
+        await runCli(['node', 'cli.js'], stdin, out.writable, err.writable, false);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'read pipe CSV');
+    });
+  });
+
+  describe('Output --shape flag', () => {
+    test('--shape array converts object input to tuple output', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonPath, '-s', 'array'], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(Array.isArray(output[0])).toBe(true);
+        expect(output[0]).toEqual([1609459200000, 100, 108, 95, 103, 5000]);
+      }, 1000, '--shape array');
+    });
+
+    test('--shape object converts tuple input to object output', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonArrayPath, '-s', 'object'], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, '--shape object');
+    });
+
+    test('--shape auto preserves CSV-derived object shape', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, '--shape auto');
     });
   });
 
   describe('Output Format', () => {
     let outputFile: string;
+    beforeEach(() => { outputFile = path.join(tempDir, 'output'); });
 
-    beforeEach(() => {
-      outputFile = path.join(tempDir, 'output');
-    });
-
-    afterEach(() => {
-      if (fs.existsSync(outputFile)) {
-        fs.unlinkSync(outputFile);
-      }
-    });
-
-    test('should write CSV output', async () => {
+    test('writes CSV output', async () => {
       await withTimeout(async () => {
-        await runCli(['node', 'cli.js', '-i', jsonPath, '-o', outputFile, '-f', 'csv'], undefined, undefined, undefined, true);
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonPath, '-o', outputFile, '-f', 'csv'], undefined, undefined, err.writable, true);
         const content = fs.readFileSync(outputFile, 'utf8');
         expect(content).toContain('time,open,high,low,close,volume');
-        expect(content.split('\n')).toHaveLength(2); // header + 1 row (resampled)
-      }, 1000, 'write CSV output');
+        expect(content.split('\n')).toHaveLength(2);
+      }, 1000, 'write CSV');
     });
 
-    test('should write JSON output', async () => {
+    test('writes JSON output', async () => {
       await withTimeout(async () => {
-        await runCli(['node', 'cli.js', '-i', csvPath, '-o', outputFile, '-f', 'json'], undefined, undefined, undefined, true);
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-o', outputFile, '-f', 'json'], undefined, undefined, err.writable, true);
         const content = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-        expect(content).toHaveLength(1); // Resampled to 5-minute candle
-        expect(content[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'write JSON output');
+        expect(content).toHaveLength(1);
+        expect(content[0]).toMatchObject(expectedCandle);
+      }, 1000, 'write JSON');
     });
 
-    test('should write to stdout when no output file specified', async () => {
+    test('writes to stdout when no output file is given', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', jsonPath], undefined, writable, writable, true);
-        const output = JSON.parse(getData());
-        expect(output).toHaveLength(1); // Resampled to 5-minute candle
-        expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'write to stdout');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonPath], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'write stdout');
     });
   });
 
   describe('Error Handling', () => {
-    test('should handle missing input file', async () => {
+    test('missing input file → exit 1 + ENOENT', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', 'nonexistent.csv'], undefined, writable, writable, true);
-        expect(getData()).toContain('no such file or directory');
-      }, 1000, 'handle missing input file');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', 'nonexistent.csv'], undefined, out.writable, err.writable, true);
+        expect(err.getData()).toContain('no such file or directory');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'missing file');
     });
 
-    test('should handle invalid JSON', async () => {
+    test('invalid JSON → exit 1', async () => {
       await withTimeout(async () => {
         const invalidJsonFile = path.join(tempDir, 'invalid.json');
         fs.writeFileSync(invalidJsonFile, '{invalid json');
-        const { writable, getData, getExitCode } = getWritableStream(true);
-        await runCli(['node', 'cli.js', '-i', invalidJsonFile], undefined, writable, writable, true);
-        expect(getExitCode()).not.toBe(0);
-      }, 1000, 'handle invalid JSON');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', invalidJsonFile], undefined, out.writable, err.writable, true);
+        expect(process.exitCode).toBe(1);
+        expect(err.getData()).toMatch(/Error:/);
+      }, 1000, 'invalid JSON');
     });
 
-    test('should handle invalid CSV', async () => {
+    test('CSV with all malformed rows → exit 1', async () => {
       await withTimeout(async () => {
         const invalidCsvFile = path.join(tempDir, 'invalid.csv');
         fs.writeFileSync(invalidCsvFile, 'time,open,high,low,close,volume\n1,2,3,4,5');
-        const { writable, getData, getExitCode } = getWritableStream(true);
-        await runCli(['node', 'cli.js', '-i', invalidCsvFile], undefined, writable, writable, true);
-        expect(getExitCode()).not.toBe(0);
-      }, 1000, 'handle invalid CSV');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', invalidCsvFile], undefined, out.writable, err.writable, true);
+        expect(process.exitCode).toBe(1);
+        expect(err.getData()).toContain('no valid OHLCV rows');
+      }, 1000, 'invalid CSV');
     });
 
-    test('should handle invalid timeframe values', async () => {
+    test('non-numeric timeframe → exit 1', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', csvPath, '-b', 'invalid', '-n', '300'], undefined, writable, writable, true);
-        expect(getData()).toContain('Timeframes must be valid numbers');
-      }, 1000, 'handle invalid timeframe values');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-b', 'invalid', '-n', '300'], undefined, out.writable, err.writable, true);
+        expect(err.getData()).toContain('Timeframes must be valid numbers');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'bad timeframe');
     });
 
-    test('should handle invalid timeframe relationship', async () => {
+    test('new <= base timeframe → exit 1', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', csvPath, '-b', '300', '-n', '60'], undefined, writable, writable, true);
-        expect(getData()).toContain('New timeframe must be greater than base timeframe');
-      }, 1000, 'handle invalid timeframe relationship');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-b', '300', '-n', '60'], undefined, out.writable, err.writable, true);
+        expect(err.getData()).toContain('New timeframe must be greater than base timeframe');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'tf relationship');
     });
   });
 
   describe('Resampling', () => {
-    test('should resample data with default timeframes', async () => {
+    test('default timeframes (60s → 300s)', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', csvPath], undefined, writable, writable, true);
-        const output = JSON.parse(getData());
-        expect(output).toHaveLength(1); // 5 minutes of 1-minute data resampled to 5 minutes
-        expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'resample with default timeframes');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'default tf');
     });
 
-    test('should resample data with custom timeframes', async () => {
+    test('custom timeframes (60s → 120s)', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        await runCli(['node', 'cli.js', '-i', csvPath, '-b', '60', '-n', '120'], undefined, writable, writable, true);
-        const output = JSON.parse(getData());
-        expect(output).toHaveLength(2); // 5 minutes of 1-minute data resampled to 2 minutes
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-b', '60', '-n', '120'], undefined, out.writable, err.writable, true);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(2);
         expect(output[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 107,
-          low: 95,
-          close: 106,
-          volume: 2200
+          time: 1609459200000, open: 100, high: 107, low: 95, close: 106, volume: 2200,
         });
-      }, 1000, 'resample with custom timeframes');
+      }, 1000, 'custom tf');
     });
   });
 
-  describe('Pipe Input Format Detection', () => {
-    it('should auto-detect JSON format from pipe', async () => {
+  describe('--input-format', () => {
+    test('auto-detects JSON from pipe', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        const jsonContent = fs.readFileSync(jsonPath, 'utf8');
-        const stdin = getReadableStream(jsonContent);
-        await runCli(['node', 'cli.js'], stdin, writable, writable, false);
-        const result = JSON.parse(getData());
-        expect(result).toHaveLength(1); // Resampled to 5-minute candle
-        expect(result[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'auto-detect JSON format');
+        const out = captureWritable();
+        const err = captureWritable();
+        const stdin = readableFromString(fs.readFileSync(jsonPath, 'utf8'));
+        await runCli(['node', 'cli.js'], stdin, out.writable, err.writable, false);
+        expect(JSON.parse(out.getData())[0]).toMatchObject(expectedCandle);
+      }, 1000, 'auto JSON');
     });
 
-    it('should auto-detect CSV format from pipe', async () => {
+    test('auto-detects CSV from pipe', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        const csvContent = fs.readFileSync(csvPath, 'utf8');
-        const stdin = getReadableStream(csvContent);
-        await runCli(['node', 'cli.js'], stdin, writable, writable, false);
-        const result = JSON.parse(getData());
-        expect(result).toHaveLength(1); // Resampled to 5-minute candle
-        expect(result[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'auto-detect CSV format');
+        const out = captureWritable();
+        const err = captureWritable();
+        const stdin = readableFromString(fs.readFileSync(csvPath, 'utf8'));
+        await runCli(['node', 'cli.js'], stdin, out.writable, err.writable, false);
+        expect(JSON.parse(out.getData())[0]).toMatchObject(expectedCandle);
+      }, 1000, 'auto CSV');
     });
 
-    it('should use forced JSON format from pipe', async () => {
+    test('--input-format json forces JSON parsing', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        const jsonContent = fs.readFileSync(jsonPath, 'utf8');
-        const stdin = getReadableStream(jsonContent);
-        await runCli(['node', 'cli.js', '--input-format', 'json'], stdin, writable, writable, false);
-        const result = JSON.parse(getData());
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'force JSON format');
+        const out = captureWritable();
+        const err = captureWritable();
+        const stdin = readableFromString(fs.readFileSync(jsonPath, 'utf8'));
+        await runCli(['node', 'cli.js', '--input-format', 'json'], stdin, out.writable, err.writable, false);
+        expect(JSON.parse(out.getData())[0]).toMatchObject(expectedCandle);
+      }, 1000, 'force JSON');
     });
 
-    it('should use forced CSV format from pipe', async () => {
+    test('--input-format csv forces CSV parsing (errors on JSON-looking input)', async () => {
       await withTimeout(async () => {
-        const { writable, getData } = getWritableStream();
-        const csvContent = fs.readFileSync(csvPath, 'utf8');
-        const stdin = getReadableStream(csvContent);
-        await runCli(['node', 'cli.js', '--input-format', 'csv'], stdin, writable, writable, false);
-        const result = JSON.parse(getData());
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({
-          time: 1609459200000,
-          open: 100,
-          high: 108,
-          low: 95,
-          close: 103,
-          volume: 5000
-        });
-      }, 1000, 'force CSV format');
+        const out = captureWritable();
+        const err = captureWritable();
+        const stdin = readableFromString(fs.readFileSync(jsonPath, 'utf8'));
+        await runCli(['node', 'cli.js', '--input-format', 'csv'], stdin, out.writable, err.writable, false);
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'force CSV on JSON');
     });
   });
 
   describe('parseCSV', () => {
-    const { parseCSV } = require('../src/cli');
     it('parses CSV with header', () => {
-      const csv = 'time,open,high,low,close,volume\n1000,1,2,0.5,1.5,10';
-      const result = parseCSV(csv);
-      expect(result).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
+      const { rows, skipped } = parseCSV('time,open,high,low,close,volume\n1000,1,2,0.5,1.5,10');
+      expect(rows).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
+      expect(skipped).toBe(0);
     });
+
     it('parses CSV without header', () => {
-      const csv = '1000,1,2,0.5,1.5,10';
-      const result = parseCSV(csv);
-      expect(result).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
+      const { rows } = parseCSV('1000,1,2,0.5,1.5,10');
+      expect(rows).toEqual([{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }]);
     });
+
     it('throws for empty CSV', () => {
       expect(() => parseCSV('')).toThrow('Error: CSV must have at least one row');
     });
-    it('omits lines with wrong number of columns', () => {
-      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5\n3000,1,2,0.5,1.5,10';
-      const result = parseCSV(csv);
-      expect(result).toEqual([
-        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
-        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
-      ]);
+
+    it('counts skipped rows with wrong column count', () => {
+      const { rows, skipped } = parseCSV('1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5\n3000,1,2,0.5,1.5,10');
+      expect(rows).toHaveLength(2);
+      expect(skipped).toBe(1);
     });
-    it('omits lines with missing values', () => {
-      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,,1.5,10\n3000,1,2,0.5,1.5,10';
-      const result = parseCSV(csv);
-      expect(result).toEqual([
-        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
-        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
-      ]);
+
+    it('counts skipped rows with missing values', () => {
+      const { rows, skipped } = parseCSV('1000,1,2,0.5,1.5,10\n2000,1,2,,1.5,10\n3000,1,2,0.5,1.5,10');
+      expect(rows).toHaveLength(2);
+      expect(skipped).toBe(1);
     });
-    it('omits lines with non-numeric values', () => {
-      const csv = '1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5,abc\n3000,1,2,0.5,1.5,10';
-      const result = parseCSV(csv);
-      expect(result).toEqual([
-        { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
-        { time: 3000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
-      ]);
+
+    it('counts skipped rows with non-numeric values', () => {
+      const { rows, skipped } = parseCSV('1000,1,2,0.5,1.5,10\n2000,1,2,0.5,1.5,abc\n3000,1,2,0.5,1.5,10');
+      expect(rows).toHaveLength(2);
+      expect(skipped).toBe(1);
     });
   });
 
   describe('detectFormat', () => {
-    const { detectFormat } = require('../src/cli');
     it('detects CSV for 5-comma line', () => {
       expect(detectFormat('1,2,3,4,5,6')).toBe('csv');
       expect(detectFormat('1000,1,2,0.5,1.5,10\n')).toBe('csv');
     });
-    it('detects JSON for valid JSON', () => {
+
+    it('detects JSON for array-of-objects', () => {
       expect(detectFormat('[{"time":1,"open":2,"high":3,"low":1,"close":2,"volume":10}]')).toBe('json');
     });
+
+    it('detects JSON for array-of-tuples', () => {
+      expect(detectFormat('[[1,2,3,1,2,10]]')).toBe('json');
+    });
+
+    it('rejects bare JSON scalars (not an array)', () => {
+      // Naked numbers/strings parse as JSON but aren't OHLCV input.
+      expect(() => detectFormat('1000')).toThrow('Could not detect input format');
+    });
+
     it('throws for unknown format', () => {
       expect(() => detectFormat('foo|bar|baz')).toThrow('Could not detect input format');
     });
   });
-}); 
+});

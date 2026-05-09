@@ -197,15 +197,30 @@ ohlc-resample -i input.csv -o output.json -f json
 
 ```bash
 Options:
-  -V, --version              Show version number
-  -i, --input <char>         Input file path (csv, json) or use pipe
-  -o, --output <char>        Output file path (csv, json) or use pipe
-  -f, --format <char>        Output file format (csv, json) (default: "json")
-  --input-format <char>      Input format when using pipe (csv, json, auto) (default: "auto")
+  -V, --version                  Show version number
+  -i, --input <path>             Input file path (csv, json) or use pipe
+  -o, --output <path>            Output file path (csv, json) or use stdout
+  -f, --format <fmt>             Output format (csv, json) (default: "json")
+      --input-format <fmt>       Input format when piping (csv, json, auto) (default: "auto")
+  -s, --shape <shape>            Output shape for JSON: object, array, auto (default: "auto")
   -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
-  -h, --help                 Display help for command
+  -h, --help                     Display help for command
 ```
+
+### OHLCV shapes
+
+The CLI accepts and emits two equivalent JSON shapes:
+
+```json
+// object shape (IOHLCV[])
+[{ "time": 1609459200000, "open": 100, "high": 105, "low": 95, "close": 102, "volume": 1000 }]
+
+// array shape (OHLCV[], CCXT-style tuple)
+[[1609459200000, 100, 105, 95, 102, 1000]]
+```
+
+Input shape is auto-detected. Output shape mirrors input by default; override with `-s array` or `-s object`. CSV input is always parsed as object-shape; CSV output is always rows.
 
 ### Input Formats
 
