@@ -8,6 +8,10 @@ Working CLI, vitest, modernized tooling. Closes #8.
 
 - `engines.node` bumped from `>=20.12.2` to `>=22.12.0` (current LTS floor). The runtime API surface is unchanged — this is purely an install-constraint update. Library consumers on Node 22+ see no behavioural difference.
 
+**Distribution**
+
+- New `install.sh` for non-Node users: `curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh` installs a self-contained CLI binary (no Node.js required at install or runtime). Per-platform binaries are built via `bun build --compile` and attached to the GitHub Release: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `windows-x64`.
+
 **CLI** (was a non-functional stub in 1.x; now ships)
 
 - `--input-format <csv|json|auto>` honors the requested format (was a no-op heuristic).

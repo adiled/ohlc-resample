@@ -7,8 +7,10 @@
 #     CLI to bump `package.json#version`, regenerate `CHANGELOG.md`, and delete
 #     the consumed changeset files. It commits and pushes those changes to main
 #     (with `[skip ci]` so the bot's own commit doesn't re-trigger this workflow),
-#     then publishes to npm with provenance, tags `vX.Y.Z`, and creates a
-#     matching GitHub Release.
+#     then publishes to npm with provenance, tags `vX.Y.Z`, creates a matching
+#     GitHub Release, builds standalone CLI binaries for every supported
+#     platform via `bun build --compile`, and uploads them as release assets so
+#     `install.sh` can fetch them.
 #
 #   - If there are no pending changesets, the workflow exits cleanly. Nothing
 #     to release.
@@ -34,6 +36,9 @@ jobs:
     permissions:
       contents: write          # push the bump commit + tag, create GH Release
       id-token: write          # npm provenance (OIDC)
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +46,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -50,12 +55,11 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
-
       - run: pnpm run build
-
       - run: pnpm test
 
       - name: Apply pending changesets and publish
+        id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -68,6 +72,7 @@ jobs:
 
           if [[ -z $(git status --porcelain) ]]; then
             echo "No pending changesets — nothing to release."
+            echo "released=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -95,3 +100,48 @@ jobs:
           gh release create "${TAG}" \
             --title "${TAG}" \
             --notes-file /tmp/release-notes.md
+
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+  # Build standalone CLI binaries (no Node required at install time) and
+  # attach them to the GH Release. Runs only when the previous job actually
+  # released. Each platform builds natively via bun-compile.
+  binaries:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: write          # upload release assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14,        target: bun-darwin-arm64,  asset: ohlc-darwin-arm64 }
+          - { runner: macos-13,        target: bun-darwin-x64,    asset: ohlc-darwin-x64 }
+          - { runner: ubuntu-24.04,    target: bun-linux-x64,     asset: ohlc-linux-x64 }
+          - { runner: ubuntu-24.04-arm,target: bun-linux-arm64,   asset: ohlc-linux-arm64 }
+          - { runner: windows-2022,    target: bun-windows-x64,   asset: ohlc-windows-x64.exe }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main          # use the post-release commit so we bundle the bumped version
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Compile binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun build --compile --target=${{ matrix.target }} src/cli.ts --outfile ${{ matrix.asset }}
+          ls -lh ${{ matrix.asset }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${{ needs.release.outputs.tag }}" "${{ matrix.asset }}" --clobber

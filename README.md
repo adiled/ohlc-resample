@@ -26,9 +26,25 @@ Resample (inter-convert) trade, ticks or OHLCV data to different time frames
 
 ## Install
 
+### CLI — no Node.js required
+
+macOS / Linux:
+
 ```sh
-npm install --save ohlc-resample
+curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
 ```
+
+Installs a self-contained binary to `~/.local/bin/ohlc`. Pin a version with `--version v2.0.0` or change the install dir with `--bin-dir /usr/local/bin`.
+
+Windows: download `ohlc-windows-x64.exe` from the [latest release](https://github.com/adiled/ohlc-resample/releases/latest).
+
+### Library — for Node.js / TypeScript projects
+
+```sh
+npm install ohlc-resample      # or pnpm add / yarn add / bun add
+```
+
+Requires Node.js ≥22.12.
 
 ## Supported formats
 
