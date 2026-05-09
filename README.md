@@ -281,6 +281,20 @@ cat data.csv | ohlc-resample -o output.json
 ohlc-resample -i data.json -b 300 -n 3600 -f csv -o output.csv
 ```
 
+## Releasing
+
+Releases are managed by [Changesets](https://github.com/changesets/changesets). The flow:
+
+1. Make a code change.
+2. `pnpm changeset` — pick the bump type (patch / minor / major) and write a one-line summary. (Or write the file by hand under `.changeset/`; see `.changeset/README.md` for the format.)
+3. Commit both the code and the changeset, open a PR.
+4. After the PR merges, the `Release` workflow opens a "Version Packages" PR with the version bump and `CHANGELOG.md` entry.
+5. Merging that PR publishes to npm with provenance, creates a `vX.Y.Z` git tag, and creates a GitHub Release — all in one workflow run.
+
+Trivial changes (typos, internal refactors that don't affect users) don't need a changeset.
+
+**One-time setup before the first release:** add `NPM_TOKEN` (an npm "Granular Access Token" with read+write on this package) as a repo secret on GitHub.
+
 ## Contributors
 
 👤 **Adil Shaikh <hello@adils.me> (https://adils.me)**

@@ -1,0 +1,69 @@
+# Release workflow.
+#
+# Fires on every push to `main`. Runs the changesets action, which has two modes:
+#
+#   1. If pending `.changeset/*.md` files exist on `main`, opens (or updates) a
+#      "Version Packages" PR that bumps `package.json#version`, regenerates
+#      `CHANGELOG.md`, and deletes the consumed changeset files.
+#
+#   2. If there are no pending changesets (i.e. the Version Packages PR was just
+#      merged), runs `pnpm release` which publishes to npm with provenance.
+#      The action also creates a matching GitHub Release with the CHANGELOG
+#      entry as the body.
+#
+# One-time setup:
+#   - In repo Settings → Secrets and variables → Actions, add `NPM_TOKEN`
+#     (an npm "Granular Access Token" with read+write on this package).
+#   - In repo Settings → Actions → General, ensure the workflow has permission
+#     to create pull requests ("Allow GitHub Actions to create and approve pull
+#     requests").
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Prevent two release runs from racing each other.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # tag pushes, CHANGELOG commits, GH Release creation
+      pull-requests: write     # opening the Version Packages PR
+      id-token: write          # npm provenance (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # full history; changesets needs it to diff branches
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      - run: pnpm test
+
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          version: pnpm changeset version
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
