@@ -292,6 +292,39 @@ Trivial changes (typos, internal refactors that don't affect users) don't need a
 
 **One-time setup before the first release:** add `NPM_TOKEN` (an npm "Granular Access Token" with read+write on this package) as a repo secret on GitHub.
 
+### Hosting independence
+
+GitHub is a convenience layer here, not a dependency. The release machinery is layered:
+
+| Layer | Where it lives | GitHub-specific? |
+|---|---|---|
+| `.changeset/*.md` files, `CHANGELOG.md`, version bumps | In the repo, managed by `@changesets/cli` (pure JS) | No |
+| Publish target | npmjs.com (or any npm-compatible registry via `publishConfig.registry`) | No |
+| Bot that opens "Version Packages" PRs and creates Releases | `.github/workflows/release.yml` using `changesets/action@v1` | **Yes — the only GitHub-specific piece** |
+| Source hosting | git remote | Yes |
+
+To move the project off GitHub:
+
+1. Repoint the git remote to a new host (GitLab, Forgejo, Gitea, sourcehut, self-hosted, …).
+2. Replace `.github/workflows/release.yml` with equivalent CI on that host (GitLab CI, Forgejo Actions, Drone, Jenkins, …) that runs `pnpm changeset version` on push-to-`main` and `pnpm publish` when there are no pending changesets. Or skip CI entirely and use the manual flow below.
+
+The `.changeset/` directory, `CHANGELOG.md` format, version-bump logic, and npm publish step are unchanged across hosts.
+
+### Manual release (no CI, no forge integration)
+
+If you want to publish from a laptop — because the CI is unavailable, you don't have the project on a forge yet, or you simply prefer local control:
+
+```sh
+pnpm changeset           # write a changeset describing the change (or hand-author the .md)
+pnpm changeset version   # bumps package.json, regenerates CHANGELOG.md, deletes consumed changesets
+git commit -am "chore(release): version packages"
+git tag "v$(node -p "require('./package.json').version")"
+git push --follow-tags
+pnpm publish --access public
+```
+
+Same artifacts, same CHANGELOG entries, same npm package as the automated flow.
+
 ## Contributors
 
 👤 **Adil Shaikh <hello@adils.me> (https://adils.me)**
