@@ -10,17 +10,26 @@ import sortBy from "lodash/sortBy";
 import chunk from "lodash/chunk";
 
 /**
-* Resample OHLCV to different timeframe
- * @param ohlcvData
- * @param options 
- * @param options.baseTimeframe 
- * @param options.newTimeframe
+ * Resample OHLCV data to a coarser timeframe. The return type follows the
+ * shape of the input — pass tuples to get tuples back, pass objects to get
+ * objects back.
+ *
+ * @param ohlcvData OHLCV data in tuple (`OHLCV[]`) or object (`IOHLCV[]`) form.
+ * @param options.baseTimeframe Source timeframe in seconds.
+ * @param options.newTimeframe Target timeframe in seconds (must be a multiple of base).
  */
-
-export const resampleOhlcv = (
+export function resampleOhlcv(
+  ohlcvData: OHLCV[],
+  options: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[];
+export function resampleOhlcv(
+  ohlcvData: IOHLCV[],
+  options: { baseTimeframe: number; newTimeframe: number }
+): IOHLCV[];
+export function resampleOhlcv(
   ohlcvData: OHLCV[] | IOHLCV[],
-  { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number, newTimeframe: number }
-): OHLCV[] | IOHLCV[] => {
+  { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[] | IOHLCV[] {
 
   if (ohlcvData.length === 0) {
     throw new Error("input OHLCV data has no candles");
@@ -45,10 +54,12 @@ export const resampleOhlcv = (
 }
 
 /**
- * Resample OHLCV in object format to different timeframe
- * @param candledata
- * @param baseFrame
- * @param newFrame
+ * Resample OHLCV tuples (`[time, open, high, low, close, volume][]`) to a
+ * coarser timeframe.
+ *
+ * @param candledata Source candles as `OHLCV[]`.
+ * @param baseFrame Source timeframe in seconds.
+ * @param newFrame Target timeframe in seconds (must be a multiple of base).
  */
 
 export const resampleOhlcvArray = (

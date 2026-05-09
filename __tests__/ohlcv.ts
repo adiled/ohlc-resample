@@ -1,6 +1,6 @@
 "use strict";
 
-import CConverter, { resampleOhlcv } from "../src/index";
+import { resampleOhlcv } from "../src/index";
 import type { IOHLCV, OHLCV } from "../src/types";
 
 // From Binance
@@ -164,7 +164,7 @@ const link_btc_1m: Array<IOHLCV> = [
 ];
 
 test("Resample OHLCV in object format - 1m to 2m", () => {
-  let result = CConverter.json(link_btc_1m, {
+  let result = resampleOhlcv(link_btc_1m, {
     baseTimeframe: 60,
     newTimeframe: 120
   });

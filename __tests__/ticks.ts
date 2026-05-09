@@ -1,6 +1,6 @@
 "use strict";
 
-import Converter from "../src/index";
+import { resampleTicksByTime, resampleTicksByCount } from "../src/index";
 import type { Trade } from "../src/types";
 
 const adabnb_trades = [
@@ -370,7 +370,7 @@ const filtered_adabnb_trades: Trade[] = adabnb_trades.map((trade: any) => ({
 }));
 
 test("Tick Chart Convert 5 tick", () => {
-  let result = Converter.tick_chart(filtered_adabnb_trades, {
+  let result = resampleTicksByCount(filtered_adabnb_trades, {
     tickCount: 5
   });
 
@@ -385,7 +385,7 @@ test("Tick Chart Convert 5 tick", () => {
 });
 
 test("Resample ticks / trades to OHLCV", () => {
-  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+  let result = resampleTicksByTime(filtered_adabnb_trades, {
     timeframe: 60,
     includeLatestCandle: false
   });
@@ -406,7 +406,7 @@ test("Resample ticks / trades to OHLCV", () => {
 });
 
 test("Resample ticks / trades to OHLCV – including open candle", () => {
-  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+  let result = resampleTicksByTime(filtered_adabnb_trades, {
     timeframe: 60
   });
 
@@ -417,7 +417,7 @@ test("Resample ticks / trades to OHLCV – including open candle", () => {
 });
 
 test("Resample ticks / trades to OHLCV - with gaps filled", () => {
-  let result = Converter.trade_to_candle(filtered_adabnb_trades, {
+  let result = resampleTicksByTime(filtered_adabnb_trades, {
     timeframe: 60,
     fillGaps: true
   });
