@@ -1,25 +1,33 @@
 #!/usr/bin/env sh
-# Install the `ohlc` CLI on macOS or Linux.
+# Install (or uninstall) the `ohlc` CLI on macOS or Linux.
 #
 # Brings its own Node.js if you don't have a recent enough one already.
 # Single source of truth: the npm package. No per-platform binaries.
 #
 # Usage:
 #   curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
+#   curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh -s -- --uninstall
 #
-# Flags:
+# Install flags:
 #   --version <version>   Pin the npm version to install (default: latest).
 #   --bin-dir <path>      Where to place the `ohlc` launcher (default: $HOME/.local/bin).
 #   --install-dir <path>  Where to place runtime + lib (default: $HOME/.ohlc).
+#
+# Uninstall flags:
+#   --uninstall           Remove the launcher and the install dir.
+#   --force               Remove the directories even if they don't look like
+#                         this installer wrote them.
 
 set -eu
 
 PKG=ohlc-resample
 BIN_NAME=ohlc
 
+MODE=install
 VERSION=latest
 BIN_DIR="${HOME}/.local/bin"
 INSTALL_DIR="${HOME}/.ohlc"
+FORCE=0
 
 # Pinned Node version we'll fetch when the host's Node is missing or too old.
 # Must satisfy the package's `engines.node`.
@@ -32,16 +40,26 @@ while [ $# -gt 0 ]; do
     --version)      VERSION="$2"; shift 2 ;;
     --bin-dir)      BIN_DIR="$2"; shift 2 ;;
     --install-dir)  INSTALL_DIR="$2"; shift 2 ;;
+    --uninstall)    MODE=uninstall; shift ;;
+    --force)        FORCE=1; shift ;;
     -h|--help)
       cat <<'USAGE'
-Install the ohlc CLI. Brings its own Node.js if needed.
+Install (or uninstall) the ohlc CLI. Brings its own Node.js if needed.
 
+Install:
   curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
 
-Flags:
+Uninstall:
+  curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh -s -- --uninstall
+
+Install flags:
   --version <version>   Pin the npm version (default: latest)
   --bin-dir <path>      Launcher destination (default: $HOME/.local/bin)
   --install-dir <path>  Runtime + lib destination (default: $HOME/.ohlc)
+
+Uninstall flags:
+  --uninstall           Switch to uninstall mode
+  --force               Remove dirs even if they don't look like this installer wrote them
 USAGE
       exit 0
       ;;
@@ -62,6 +80,40 @@ case "$(uname -m)" in
   *) printf 'unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
 esac
 
+# ---- Uninstall ----
+if [ "$MODE" = "uninstall" ]; then
+  launcher="${BIN_DIR}/${BIN_NAME}"
+  removed_any=0
+
+  if [ -e "$launcher" ]; then
+    # Sanity check: is it our launcher? Our launcher refs the package path.
+    if [ "$FORCE" -eq 1 ] || grep -q "node_modules/${PKG}/dist/cli.js" "$launcher" 2>/dev/null; then
+      rm -f "$launcher"
+      printf '✓ Removed launcher %s\n' "$launcher"
+      removed_any=1
+    else
+      printf 'Refusing to remove %s (does not look like our launcher).\nPass --force to override.\n' "$launcher" >&2
+    fi
+  fi
+
+  if [ -d "$INSTALL_DIR" ]; then
+    # Sanity check: does it look like our install dir?
+    if [ "$FORCE" -eq 1 ] || [ -d "${INSTALL_DIR}/lib/node_modules/${PKG}" ] || [ -d "${INSTALL_DIR}/runtime" ]; then
+      rm -rf "$INSTALL_DIR"
+      printf '✓ Removed install dir %s\n' "$INSTALL_DIR"
+      removed_any=1
+    else
+      printf 'Refusing to remove %s (does not look like our install dir).\nPass --force to override.\n' "$INSTALL_DIR" >&2
+    fi
+  fi
+
+  if [ "$removed_any" -eq 0 ]; then
+    printf 'Nothing to uninstall (no launcher at %s and no install dir at %s).\n' "$launcher" "$INSTALL_DIR"
+  fi
+  exit 0
+fi
+
+# ---- Install ----
 mkdir -p "$BIN_DIR" "$INSTALL_DIR"
 
 # Decide which Node to use.

@@ -36,6 +36,12 @@ curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
 
 Installs the `ohlc` CLI to `~/.local/bin`. If you don't already have a recent enough Node, the installer downloads one for you and uses it. Pin a specific version with `--version 2.0.0`.
 
+To uninstall:
+
+```sh
+curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh -s -- --uninstall
+```
+
 ### Library
 
 ```sh
