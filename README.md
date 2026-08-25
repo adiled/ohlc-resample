@@ -314,7 +314,7 @@ Contributions, issues and feature requests are welcome!<br />Feel free to check 
 ### Run tests
 
 ```sh
-pnpm test
+npm test
 ```
 
 ## Show your support

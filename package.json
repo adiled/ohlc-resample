@@ -14,12 +14,12 @@
     "prebuild": "rimraf dist",
     "build": "tsc --build",
     "build:check": "node -e \"require('./dist')\"",
-    "prepublishOnly": "pnpm test && pnpm run build && pnpm run build:check",
+    "prepublishOnly": "npm test && npm run build && npm run build:check",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "changeset": "changeset",
-    "release": "pnpm publish --no-git-checks --access public --provenance"
+    "release": "npm publish --no-git-checks --access public --provenance"
   },
   "bin": {
     "ohlc": "./dist/cli.js"

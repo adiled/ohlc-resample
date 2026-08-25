@@ -44,19 +44,15 @@ jobs:
         with:
           fetch-depth: 0       # full history; changesets needs it
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: pnpm
+          cache: npm
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-      - run: pnpm test
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
 
       - name: Apply pending changesets and publish
         env:
@@ -67,7 +63,7 @@ jobs:
 
           # Consume any pending changesets — bumps version, updates CHANGELOG,
           # deletes the consumed .changeset/*.md files. No-op if none pending.
-          pnpm changeset version
+          changeset version
 
           if [[ -z $(git status --porcelain) ]]; then
             echo "No pending changesets — nothing to release."
@@ -86,7 +82,7 @@ jobs:
           # Publish first so a push success + publish failure doesn't leave a
           # phantom version on main. (npm rejects duplicate versions, so a
           # retried run is safe.)
-          pnpm publish --no-git-checks --access public --provenance
+          npm publish --no-git-checks --access public --provenance
 
           git tag "${TAG}"
           git push origin "${TAG}"
