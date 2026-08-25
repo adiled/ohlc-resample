@@ -13,10 +13,7 @@ Resample (inter-convert) trade, ticks or OHLCV data to different time frames
   <a href="https://github.com/adiled/ohlc-resample/graphs/commit-activity" target="_blank">
     <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" />
   </a>
-  <a href="https://coveralls.io/github/adiled/ohlc-resample?branch=master" target="_blank">
-    <img alt="Coverage Status" src="https://coveralls.io/repos/github/adiled/ohlc-resample/badge.svg?branch=master">
-  </a>
-  <a href="https://github.com/adiled/ohlc-resample/blob/master/LICENSE" target="_blank">
+  <a href="https://github.com/adiled/ohlc-resample/blob/main/COPYING" target="_blank">
     <img alt="License: LGPL--3.0" src="https://img.shields.io/github/license/adiled/ohlc-resample" />
   </a>
 </p>
@@ -29,9 +26,29 @@ Resample (inter-convert) trade, ticks or OHLCV data to different time frames
 
 ## Install
 
+### CLI
+
+macOS / Linux:
+
 ```sh
-npm install --save ohlc-resample
+curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
 ```
+
+Installs the `ohlc` CLI to `~/.local/bin`. If you don't already have a recent enough Node, the installer downloads one for you and uses it. Pin a specific version with `--version 2.0.0`.
+
+To uninstall:
+
+```sh
+curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh -s -- --uninstall
+```
+
+### Library
+
+```sh
+npm install ohlc-resample      # or pnpm add / yarn add / bun add
+```
+
+Requires Node.js ≥26.
 
 ## Supported formats
 
@@ -176,6 +193,111 @@ const tickChart = resampleTicksByCount(airbnb_ticks, {
 });
 ```
 
+## CLI Usage
+
+The package includes a command-line interface for resampling OHLCV data between timeframes and file formats.
+
+### Basic Usage
+
+```bash
+# Resample CSV file with default timeframes (1m -> 5m)
+ohlc-resample -i input.csv
+
+# Resample JSON file with custom timeframes
+ohlc-resample -i input.json -b 60 -n 300
+
+# Save output to file with specific format
+ohlc-resample -i input.csv -o output.json -f json
+```
+
+### Options
+
+```bash
+Options:
+  -V, --version                  Show version number
+  -i, --input <path>             Input file path (csv, json) or use pipe
+  -o, --output <path>            Output file path (csv, json) or use stdout
+  -f, --format <fmt>             Output format (csv, json) (default: "json")
+      --input-format <fmt>       Input format when piping (csv, json, auto) (default: "auto")
+  -s, --shape <shape>            Output shape for JSON: object, array, auto (default: "auto")
+  -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
+  -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
+  -h, --help                     Display help for command
+```
+
+### OHLCV shapes
+
+The CLI accepts and emits two equivalent JSON shapes:
+
+```json
+// object shape (IOHLCV[])
+[{ "time": 1609459200000, "open": 100, "high": 105, "low": 95, "close": 102, "volume": 1000 }]
+
+// array shape (OHLCV[], CCXT-style tuple)
+[[1609459200000, 100, 105, 95, 102, 1000]]
+```
+
+Input shape is auto-detected. Output shape mirrors input by default; override with `-s array` or `-s object`. CSV input is always parsed as object-shape; CSV output is always rows.
+
+### Input Formats
+
+The CLI supports both CSV and JSON input formats:
+
+#### CSV Format
+```csv
+time,open,high,low,close,volume
+1609459200000,100,105,95,102,1000
+1609459260000,102,107,101,106,1200
+```
+
+#### JSON Format
+```json
+[
+  {
+    "time": 1609459200000,
+    "open": 100,
+    "high": 105,
+    "low": 95,
+    "close": 102,
+    "volume": 1000
+  }
+]
+```
+
+### Pipe Input
+
+You can pipe data into the CLI from other commands. The format is automatically detected, or you can specify it:
+
+```bash
+# Auto-detect format
+cat data.json | ohlc-resample
+cat data.csv | ohlc-resample
+
+# Force specific format
+cat data.json | ohlc-resample --input-format json
+cat data.csv | ohlc-resample --input-format csv
+```
+
+The CLI supports two types of pipe input:
+1. JSON files/strings with OHLCV objects
+2. CSV files/strings with headers (time,open,high,low,close,volume)
+
+### Examples
+
+```bash
+# Resample 1-minute data to 5-minute candles
+ohlc-resample -i data.csv -b 60 -n 300
+
+# Convert CSV to JSON format
+ohlc-resample -i data.csv -f json
+
+# Pipe data and save to file
+cat data.csv | ohlc-resample -o output.json
+
+# Resample with custom timeframes and save as CSV
+ohlc-resample -i data.json -b 300 -n 3600 -f csv -o output.csv
+```
+
 ## Contributors
 
 👤 **Adil Shaikh <hello@adils.me> (https://adils.me)**
@@ -187,12 +309,12 @@ const tickChart = resampleTicksByCount(airbnb_ticks, {
 
 ## 🤝 Contributing
 
-Contributions, issues and feature requests are welcome!<br />Feel free to check [issues page](https://github.com/adiled/ohlc-resample/issues). You can also take a look at the [contributing guide](https://github.com/adiled/ohlc-resample/blob/master/CONTRIBUTING.md).
+Contributions, issues and feature requests are welcome!<br />Feel free to check the [issues page](https://github.com/adiled/ohlc-resample/issues).
 
 ### Run tests
 
 ```sh
-yarn test
+npm test
 ```
 
 ## Show your support
@@ -202,4 +324,4 @@ Give a ⭐️ if this project helped you!
 ## 📝 License
 
 Copyright © 2022 [Adil Shaikh <hello@adils.me> (https://adils.me)](https://github.com/adiled).<br />
-This project is [LGPL--3.0](https://github.com/adiled/ohlc-resample/blob/master/LICENSE) licensed.
+This project is [LGPL--3.0](https://github.com/adiled/ohlc-resample/blob/main/COPYING) licensed.

@@ -1,0 +1,96 @@
+# Release workflow.
+#
+# Fires on every push to `main`. The decision to release is driven entirely by
+# what's in `.changeset/`:
+#
+#   - If pending `.changeset/*.md` files exist, the workflow runs the changesets
+#     CLI to bump `package.json#version`, regenerate `CHANGELOG.md`, and delete
+#     the consumed changeset files. It commits and pushes those changes to main
+#     (with `[skip ci]` so the bot's own commit doesn't re-trigger this workflow),
+#     then publishes to npm with provenance, tags `vX.Y.Z`, and creates a
+#     matching GitHub Release.
+#
+#   - If there are no pending changesets, the workflow exits cleanly. Nothing
+#     to release.
+#
+# All of this happens in a single workflow run from one push to main.
+#
+# The npm tarball is the only release artifact. `install.sh` (run client-side
+# by users) handles platform-specific work, including bringing a Node runtime
+# along when the user doesn't have one. No per-platform binaries are built or
+# uploaded.
+#
+# One-time setup:
+#   - In repo Settings → Secrets and variables → Actions, add `NPM_TOKEN`
+#     (an npm "Granular Access Token" with read+write on this package).
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Prevent two release runs from racing each other.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # push the bump commit + tag, create GH Release
+      id-token: write          # npm provenance (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # full history; changesets needs it
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.x
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Apply pending changesets and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Consume any pending changesets — bumps version, updates CHANGELOG,
+          # deletes the consumed .changeset/*.md files. No-op if none pending.
+          changeset version
+
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No pending changesets — nothing to release."
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -m "chore(release): ${TAG} [skip ci]"
+          git push origin HEAD:main
+
+          # Publish first so a push success + publish failure doesn't leave a
+          # phantom version on main. (npm rejects duplicate versions, so a
+          # retried run is safe.)
+          npm publish --no-git-checks --access public --provenance
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+          # Extract the just-prepended CHANGELOG entry (everything between the
+          # first `## ` heading and the next one, minus the heading itself) and
+          # use it as the GitHub Release body.
+          awk '/^## /{i++} i==1' CHANGELOG.md | tail -n +2 > /tmp/release-notes.md
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file /tmp/release-notes.md

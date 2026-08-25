@@ -10,17 +10,32 @@ import sortBy from "lodash/sortBy";
 import chunk from "lodash/chunk";
 
 /**
-* Resample OHLCV to different timeframe
- * @param ohlcvData
- * @param options 
- * @param options.baseTimeframe 
- * @param options.newTimeframe
+ * Resample OHLCV data to a coarser timeframe. The return type follows the
+ * shape of the input — pass tuples to get tuples back, pass objects to get
+ * objects back.
+ *
+ * @param ohlcvData OHLCV data in tuple (`OHLCV[]`) or object (`IOHLCV[]`) form.
+ * @param options.baseTimeframe Source timeframe in seconds.
+ * @param options.newTimeframe Target timeframe in seconds (must be a multiple of base).
  */
-
-export const resampleOhlcv = (
+export function resampleOhlcv(
+  ohlcvData: OHLCV[],
+  options: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[];
+export function resampleOhlcv(
+  ohlcvData: IOHLCV[],
+  options: { baseTimeframe: number; newTimeframe: number }
+): IOHLCV[];
+// 1.x BC overload: a union-typed argument still resolves cleanly. Keep this
+// even though the narrower overloads above are preferred for new code.
+export function resampleOhlcv(
   ohlcvData: OHLCV[] | IOHLCV[],
-  { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number, newTimeframe: number }
-): OHLCV[] | IOHLCV[] => {
+  options: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[] | IOHLCV[];
+export function resampleOhlcv(
+  ohlcvData: OHLCV[] | IOHLCV[],
+  { baseTimeframe = 60, newTimeframe = 300 }: { baseTimeframe: number; newTimeframe: number }
+): OHLCV[] | IOHLCV[] {
 
   if (ohlcvData.length === 0) {
     throw new Error("input OHLCV data has no candles");
@@ -45,104 +60,61 @@ export const resampleOhlcv = (
 }
 
 /**
- * Resample OHLCV in object format to different timeframe
- * @param candledata
- * @param baseFrame
- * @param newFrame
+ * Resample OHLCV tuples (`[time, open, high, low, close, volume][]`) to a
+ * coarser timeframe.
+ *
+ * Candles are grouped purely by wall-clock bucket (`floor(time / newFrame)`):
+ * every input candle lands in the bucket its timestamp falls into, so
+ * offset or gappy input produces correct buckets. Input is sorted and copied —
+ * the caller's array and its elements are never mutated.
+ *
+ * @param candledata Source candles as `OHLCV[]`.
+ * @param baseFrame Source timeframe in seconds.
+ * @param newFrame Target timeframe in seconds (must be a multiple of base).
+ * @throws if `newFrame` is not a positive integer multiple of `baseFrame`.
  */
 
 export const resampleOhlcvArray = (
-  candledata: OHLCV[] | ReadableStream,
+  candledata: OHLCV[],
   baseFrame: number = 60,
   newFrame: number = 300
 ): OHLCV[] => {
+  if (!Number.isFinite(baseFrame) || baseFrame <= 0) {
+    throw new Error("baseFrame must be a positive number");
+  }
+  if (!Number.isFinite(newFrame) || newFrame <= 0) {
+    throw new Error("newFrame must be a positive number");
+  }
+  const ratio = newFrame / baseFrame;
+  if (Math.floor(ratio) !== ratio) {
+    throw new Error("newFrame must be an integer multiple of baseFrame");
+  }
+  const msFrame = newFrame * 1000;
+  const buckets = new Map<number, OHLCV>();
 
-  const result: OHLCV[] = [];
-  baseFrame *= 1000;
-  newFrame *= 1000;
+  // Normalize + sort a copy so the caller's data is left untouched.
+  const candles: OHLCV[] = candledata
+    .map(c => {
+      const [time, open, high, low, close, volume] = c.map(Number);
+      return [time, open, high, low, close, volume] as OHLCV;
+    })
+    .sort((a, b) => a[0] - b[0]);
 
-  const convertRatio = Math.floor(newFrame / baseFrame);
-
-  if (convertRatio % 1 !== 0) {
-    throw new Error("Convert ratio should integer an >= 2");
+  for (const [time, open, high, low, close, volume] of candles) {
+    const bucketTime = time - (time % msFrame);
+    const bucket: OHLCV | undefined = buckets.get(bucketTime);
+    if (bucket === undefined) {
+      buckets.set(bucketTime, [bucketTime, open, high, low, close, volume]);
+    } else {
+      bucket[0] = bucketTime;
+      bucket[2] = Math.max(bucket[2], high);
+      bucket[3] = Math.min(bucket[3], low);
+      bucket[4] = close; // last candle in bucket (sorted) wins
+      bucket[5] += volume;
+    }
   }
 
-  if (Array.isArray(candledata)) {
-    if (candledata.length == 0 || candledata.length < convertRatio) {
-      return result;
-    }
-  } else {
-    throw new Error("Candledata is empty or not an array!");
-  }
-
-  // Sort Data to ascending by Time
-  candledata.sort((a, b) => a[OHLCVField.TIME] - b[OHLCVField.TIME]);
-
-  // Buffer values
-  let open = 0;
-  let high = 0;
-  let close = 0;
-  let low = 0;
-  let volume = 0;
-  let timeOpen = null;
-  let j = 0;
-
-  for (let i = 0; i < candledata.length; i++) {
-    const candle = candledata[i];
-
-    // Type convert
-    candle[OHLCVField.TIME] = Number(candle[OHLCVField.TIME]);
-    candle[OHLCVField.OPEN] = Number(candle[OHLCVField.OPEN]);
-    candle[OHLCVField.HIGH] = Number(candle[OHLCVField.HIGH]);
-    candle[OHLCVField.LOW] = Number(candle[OHLCVField.LOW]);
-    candle[OHLCVField.CLOSE] = Number(candle[OHLCVField.CLOSE]);
-    candle[OHLCVField.VOLUME] = Number(candle[OHLCVField.VOLUME]);
-
-    // First / Force New Candle
-    if (timeOpen === null) {
-      timeOpen = candle[OHLCVField.TIME];
-
-      if (candle[OHLCVField.TIME] % newFrame > 0) {
-        timeOpen = candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame;
-      }
-
-      open = candle[OHLCVField.OPEN];
-      high = candle[OHLCVField.HIGH];
-      low = candle[OHLCVField.LOW];
-      close = candle[OHLCVField.CLOSE];
-      volume = 0;
-      j = 1;
-    }
-
-    // New Candle
-    if (candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame !== timeOpen) {
-
-      result.push([timeOpen, open, high, low, close, volume]);
-
-      timeOpen = candle[OHLCVField.TIME] - candle[OHLCVField.TIME] % newFrame;
-      open = candle[OHLCVField.OPEN];
-      high = candle[OHLCVField.HIGH];
-      low = candle[OHLCVField.LOW];
-      close = candle[OHLCVField.CLOSE];
-      volume = 0;
-      j = 1;
-    }
-
-    high = Math.max(candle[OHLCVField.HIGH], high);
-    low = Math.min(candle[OHLCVField.LOW], low);
-    close = candle[OHLCVField.CLOSE];
-    volume = volume + candle[OHLCVField.VOLUME];
-
-    // Batch counter
-    if (j === convertRatio) {
-      result.push([timeOpen, open, high, low, close, volume]);
-      timeOpen = null;
-    }
-
-    j = j + 1;
-  }
-
-  return result;
+  return [...buckets.values()].sort((a, b) => a[0] - b[0]);
 }
 
 /**

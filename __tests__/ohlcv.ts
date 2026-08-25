@@ -1,6 +1,7 @@
 "use strict";
 
-import CConverter, { resampleOhlcv } from "../src/index";
+import { test, expect } from "vitest";
+import { resampleOhlcv } from "../src/index";
 import type { IOHLCV, OHLCV } from "../src/types";
 
 // From Binance
@@ -49,7 +50,7 @@ test("OHLCV Resample - 1m to 5m", () => {
   });
 
   expect(result[4]).toEqual(btc_usdt_5m[0]);
-  expect(result).toHaveLength(6);
+  expect(result).toHaveLength(7);
 });
 
 
@@ -67,7 +68,7 @@ test("OHLCV Resample - 1m to 5m with missing values", () => {
   });
 
   expect(incompleteArray.length).toBeLessThan(btc_usdt_1m.length);
-  expect(result).toHaveLength(6);
+  expect(result).toHaveLength(7);
 });
 
 
@@ -164,7 +165,7 @@ const link_btc_1m: Array<IOHLCV> = [
 ];
 
 test("Resample OHLCV in object format - 1m to 2m", () => {
-  let result = CConverter.json(link_btc_1m, {
+  let result = resampleOhlcv(link_btc_1m, {
     baseTimeframe: 60,
     newTimeframe: 120
   });
