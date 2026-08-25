@@ -63,7 +63,9 @@ jobs:
 
           # Consume any pending changesets — bumps version, updates CHANGELOG,
           # deletes the consumed .changeset/*.md files. No-op if none pending.
-          changeset version
+          # `npx` (not bare `changeset`) so node_modules/.bin is resolved — npm
+          # doesn't add it to PATH in GH Actions the way pnpm's action does.
+          npx changeset version
 
           if [[ -z $(git status --porcelain) ]]; then
             echo "No pending changesets — nothing to release."
