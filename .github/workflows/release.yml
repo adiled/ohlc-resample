@@ -1,19 +1,18 @@
 # Release workflow.
 #
-# Fires on every push to `main`. The decision to release is driven entirely by
-# what's in `.changeset/`:
+# Fires on every push to `main`. PR-based Changesets flow:
 #
-#   - If pending `.changeset/*.md` files exist, the workflow runs the changesets
-#     CLI to bump `package.json#version`, regenerate `CHANGELOG.md`, and delete
-#     the consumed changeset files. It commits and pushes those changes to main
-#     (with `[skip ci]` so the bot's own commit doesn't re-trigger this workflow),
-#     then publishes to npm with provenance, tags `vX.Y.Z`, and creates a
-#     matching GitHub Release.
+#   - If pending `.changeset/*.md` files exist, the workflow applies the
+#     version bump / CHANGELOG update on a branch and opens a "Version
+#     Packages" PR. Nothing is published yet.
 #
-#   - If there are no pending changesets, the workflow exits cleanly. Nothing
-#     to release.
+#   - When that PR is merged (push to `main` with no pending changesets),
+#     the workflow publishes to npm with provenance, tags `vX.Y.Z`, and
+#     creates a matching GitHub Release. If the version is already published
+#     (an unrelated push), it exits cleanly.
 #
-# All of this happens in a single workflow run from one push to main.
+# `main` is branch-protected (PR required), so the bump is never pushed
+# straight to `main` — it always goes through a PR.
 #
 # The npm tarball is the only release artifact. `install.sh` (run client-side
 # by users) handles platform-specific work, including bringing a Node runtime
@@ -37,7 +36,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # push the bump commit + tag, create GH Release
+      contents: write          # push the Version Packages branch + tag, create GH Release
+      pull-requests: write     # open/update the Version Packages PR
       id-token: write          # npm provenance (OIDC)
     steps:
       - uses: actions/checkout@v4
@@ -54,13 +54,12 @@ jobs:
       - run: npm run build
       - run: npm test
 
-      - name: Apply pending changesets and publish
+      - name: Apply pending changesets
+        id: apply
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # @changesets/changelog-github reads process.env.GITHUB_TOKEN to
           # resolve PR/author links; pass the built-in auto token under that name.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -70,23 +69,55 @@ jobs:
           # doesn't add it to PATH in GH Actions the way pnpm's action does.
           npx changeset version
 
-          if [[ -z $(git status --porcelain) ]]; then
-            echo "No pending changesets — nothing to release."
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "has_changes=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open Version Packages PR
+        if: steps.apply.outputs.has_changes == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git checkout -B changeset-release/main
+          git add -A
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git commit -m "Version Packages"
+          git push origin changeset-release/main --force
+
+          if gh pr list --head changeset-release/main --json number | grep -q '"number"'; then
+            gh pr edit changeset-release/main \
+              --title "Version Packages" \
+              --body "This PR was opened by the release workflow. It applies any pending changesets (version bumps, CHANGELOG updates) and deletes the consumed \`.changeset/*.md\` files. Merging it triggers the npm publish + tag + GitHub Release."
+          else
+            gh pr create \
+              --base main \
+              --head changeset-release/main \
+              --title "Version Packages" \
+              --body "This PR was opened by the release workflow. It applies any pending changesets (version bumps, CHANGELOG updates) and deletes the consumed \`.changeset/*.md\` files. Merging it triggers the npm publish + tag + GitHub Release."
+          fi
+
+      - name: Publish
+        if: steps.apply.outputs.has_changes != '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          LOCAL=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view ohlc-resample@latest version 2>/dev/null || echo "")
+          if [[ -n "$PUBLISHED" && "$LOCAL" == "$PUBLISHED" ]]; then
+            echo "Version ${LOCAL} already published — nothing to do."
             exit 0
           fi
 
-          VERSION=$(node -p "require('./package.json').version")
-          TAG="v${VERSION}"
+          TAG="v${LOCAL}"
 
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add -A
-          git commit -m "chore(release): ${TAG} [skip ci]"
-          git push origin HEAD:main
-
-          # Publish first so a push success + publish failure doesn't leave a
-          # phantom version on main. (npm rejects duplicate versions, so a
-          # retried run is safe.)
+          # Publish first so a tag/release failure doesn't leave a phantom
+          # version. (npm rejects duplicate versions, so a retried run is safe.)
           npm publish --no-git-checks --access public --provenance
 
           git tag "${TAG}"
