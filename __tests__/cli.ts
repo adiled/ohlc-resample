@@ -291,7 +291,7 @@ describe('CLI', () => {
         const err = captureWritable();
         await runCli(['node', 'cli.js', '-i', csvPath, '-b', '60', '-n', '120'], undefined, out.writable, err.writable);
         const output = JSON.parse(out.getData());
-        expect(output).toHaveLength(2);
+        expect(output).toHaveLength(3);
         expect(output[0]).toMatchObject({
           time: 1609459200000, open: 100, high: 107, low: 95, close: 106, volume: 2200,
         });

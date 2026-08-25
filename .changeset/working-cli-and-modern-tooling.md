@@ -6,11 +6,11 @@ Working CLI, vitest, modernized tooling. Closes #8.
 
 **Breaking change**
 
-- `engines.node` bumped from `>=20.12.2` to `>=22.12.0` (current LTS floor). The runtime API surface is unchanged — this is purely an install-constraint update. Library consumers on Node 22+ see no behavioural difference.
+- `engines.node` bumped from `>=20.12.2` to `>=26` (current LTS floor). The runtime API surface is unchanged — this is purely an install-constraint update. Library consumers on Node 26+ see no behavioural difference.
 
 **Distribution**
 
-- New `install.sh` for non-Node users: `curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh`. The installer uses your existing Node ≥22.12 if present; otherwise it downloads the official Node binary distribution from nodejs.org into `~/.ohlc/runtime/` and uses that. The package itself is the only release artifact — no per-platform binaries.
+- New `install.sh` for non-Node users: `curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh`. The installer uses your existing Node ≥26 if present; otherwise it downloads the official Node binary distribution from nodejs.org into `~/.ohlc/runtime/` and uses that. The package itself is the only release artifact — no per-platform binaries.
 
 **CLI** (was a non-functional stub in 1.x; now ships)
 
@@ -23,6 +23,9 @@ Working CLI, vitest, modernized tooling. Closes #8.
 
 **Library**
 
+- `resampleOhlcvArray` now buckets candles by wall-clock time (`floor(time / newFrame)`) instead of a candle-count counter. Fixes silent data loss: offset or short inputs (count not a multiple of the ratio) used to drop the final bucket entirely, and misaligned inputs merged candles across time slots. Partial buckets are now always emitted.
+- `resampleOhlcvArray` no longer mutates its input — candles are normalized and sorted on a copy.
+- `newFrame` must be a positive integer multiple of `baseFrame`; a non-integer ratio now throws instead of silently mis-bucketing.
 - `resampleOhlcv` now has overloaded signatures so the return type follows the input shape (`OHLCV[]` in → `OHLCV[]` out, same for `IOHLCV[]`). The original union signature is preserved as a third overload, so 1.x TS callers with union-typed data still compile.
 - Types (`IOHLCV`, `OHLCV`, `TradeTick`, etc.) are now re-exported from the package entrypoint.
 - Fixed inverted JSDoc on `resampleOhlcvArray`.
@@ -34,5 +37,5 @@ Working CLI, vitest, modernized tooling. Closes #8.
 - TypeScript bumped to 6.x; tsconfig modernized (`target: es2022`, `lib: es2022`, explicit `types: ["node"]`).
 - Releases managed by [Changesets](https://github.com/changesets/changesets) with a direct-commit workflow: a push to `main` with a changeset triggers bump + commit + npm publish (with provenance) + tag + GitHub Release in a single CI run.
 - Dropped unused `chalk`, `coveralls`, `fast-csv` deps; moved `ts-node` to devDependencies.
-- CI workflow: triggers on `main`, runs Node 22.x and 24.x.
+- CI workflow: triggers on `main`, runs Node 26.x.
 - Removed obsolete `.npmignore`, dropped stale `deprecated.md`, cleaned coveralls/yarn/master references from README.

@@ -50,7 +50,7 @@ test("OHLCV Resample - 1m to 5m", () => {
   });
 
   expect(result[4]).toEqual(btc_usdt_5m[0]);
-  expect(result).toHaveLength(6);
+  expect(result).toHaveLength(7);
 });
 
 
@@ -68,7 +68,7 @@ test("OHLCV Resample - 1m to 5m with missing values", () => {
   });
 
   expect(incompleteArray.length).toBeLessThan(btc_usdt_1m.length);
-  expect(result).toHaveLength(6);
+  expect(result).toHaveLength(7);
 });
 
 

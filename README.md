@@ -48,7 +48,7 @@ curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh -s -
 npm install ohlc-resample      # or pnpm add / yarn add / bun add
 ```
 
-Requires Node.js ≥22.12.
+Requires Node.js ≥26.
 
 ## Supported formats
 

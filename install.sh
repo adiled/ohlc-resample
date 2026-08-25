@@ -31,9 +31,9 @@ FORCE=0
 
 # Pinned Node version we'll fetch when the host's Node is missing or too old.
 # Must satisfy the package's `engines.node`.
-NODE_VERSION=22.12.0
-MIN_NODE_MAJOR=22
-MIN_NODE_MINOR=12
+NODE_VERSION=26.7.0
+MIN_NODE_MAJOR=26
+MIN_NODE_MINOR=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -121,7 +121,7 @@ NODE=""
 NPM=""
 
 version_ge() {
-  # version_ge "22.12.0" "22.12" → returns 0 if first ≥ MIN_NODE_MAJOR.MIN_NODE_MINOR
+  # version_ge "26.7.0" "26.0" → returns 0 if first ≥ MIN_NODE_MAJOR.MIN_NODE_MINOR
   v=$1
   major=$(echo "$v" | cut -d. -f1)
   minor=$(echo "$v" | cut -d. -f2)
