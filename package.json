@@ -22,7 +22,7 @@
     "release": "npm publish --no-git-checks --access public --provenance"
   },
   "bin": {
-    "ohlc": "./dist/cli.js"
+    "ohlc-resample": "./dist/cli.js"
   },
   "keywords": [
     "ohlc",
