@@ -57,6 +57,9 @@ jobs:
       - name: Apply pending changesets and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # @changesets/changelog-github reads process.env.GITHUB_TOKEN to
+          # resolve PR/author links; pass the built-in auto token under that name.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
