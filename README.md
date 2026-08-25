@@ -91,6 +91,58 @@ resampleTicksByTime(tickData as TradeTick[], {
 resampleTicksByCount(tickData as TradeTick[], { tickCount: 5 }); // return IOHLCV[]
 ```
 
+## Streaming & large data
+
+The three functions above all accept a **sync iterable / generator** as well as
+an array (materialized internally), and `resampleOhlcv` also accepts a binary
+`Float64Array` of interleaved `[time, open, high, low, close, volume]` records.
+
+For **true streaming** — large files, live feeds, or anything you don't want to
+hold in memory — use the async variants. They consume an `AsyncIterable` (a
+Node `ReadableStream`, an async generator, `for await` sources) and return an
+`AsyncGenerator` that emits each bucket as soon as it is safe. Memory use is
+bounded by the active bucket window, never the whole input.
+
+```typescript
+import {
+  resampleOhlcvAsync,
+  resampleTicksByTimeAsync,
+  resampleTicksByCountAsync,
+} from "ohlc-resample";
+
+// Stream OHLCV candles, one bucket at a time
+for await (const candle of resampleOhlcvAsync(readableStream, {
+  baseTimeframe: 60,
+  newTimeframe: 300,
+})) {
+  // candle is a completed OHLCV bucket
+}
+
+// Stream ticks into time buckets
+for await (const candle of resampleTicksByTimeAsync(tickSource, {
+  timeframe: 60,
+  includeLatestCandle: false,
+  fillGaps: true,
+})) {
+  // ...
+}
+
+// Stream ticks into count buckets (O(tickCount) memory)
+for await (const candle of resampleTicksByCountAsync(tickSource, { tickCount: 5 })) {
+  // ...
+}
+```
+
+**Sorted input.** The array API sorts a copy for you; a streaming API cannot
+buffer to sort, so pass data **ascending by time** unless you use the healing
+window below.
+
+**Out-of-order healing.** With `outOfOrderMs > 0`, the stream keeps each bucket
+open for that many milliseconds of wall-clock time, so delayed or out-of-order
+records that land inside the window are folded into the correct bucket on the
+fly — no global sort, and no re-reading already-emitted buckets. `outOfOrderMs
+= 0` (default) is exact for pre-sorted input and emits as the stream passes.
+
 ## Types
 
 ```typescript
@@ -217,8 +269,8 @@ Options:
   -V, --version                  Show version number
   -i, --input <path>             Input file path (csv, json) or use pipe
   -o, --output <path>            Output file path (csv, json) or use stdout
-  -f, --format <fmt>             Output format (csv, json) (default: "json")
-      --input-format <fmt>       Input format when piping (csv, json, auto) (default: "auto")
+  -f, --format <fmt>             Output format (csv, json, jsonl) (default: "json")
+      --input-format <fmt>       Input format when piping (csv, json, jsonl, auto) (default: "auto")
   -s, --shape <shape>            Output shape for JSON: object, array, auto (default: "auto")
   -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
@@ -239,9 +291,25 @@ The CLI accepts and emits two equivalent JSON shapes:
 
 Input shape is auto-detected. Output shape mirrors input by default; override with `-s array` or `-s object`. CSV input is always parsed as object-shape; CSV output is always rows.
 
+### Large files
+
+`.csv`, `.jsonl`, and `.ndjson` **files are read line-by-line and fed through
+the async streaming resampler**, so memory never scales with file size (a
+JSON array file is the exception: the whole document must be parsed to know
+where the array ends, so it stays buffer-based). Output is written
+incrementally in CSV, JSON (a valid, parseable array), or JSONL.
+
+```bash
+# Stream a 100MB CSV to JSONL candles
+ohlc-resample -i huge.csv -f jsonl -o candles.jsonl
+
+# Pipe JSONL line-by-line (no buffering)
+cat data.jsonl | ohlc-resample --input-format jsonl -f jsonl
+```
+
 ### Input Formats
 
-The CLI supports both CSV and JSON input formats:
+The CLI supports CSV, JSON, and JSONL input formats:
 
 #### CSV Format
 ```csv
@@ -262,6 +330,12 @@ time,open,high,low,close,volume
     "volume": 1000
   }
 ]
+```
+
+#### JSONL Format (one candle per line)
+```json
+{"time":1609459200000,"open":100,"high":105,"low":95,"close":102,"volume":1000}
+{"time":1609459260000,"open":102,"high":107,"low":101,"close":106,"volume":1200}
 ```
 
 ### Pipe Input
