@@ -18,7 +18,7 @@ Working CLI, vitest, modernized tooling. Closes #8.
 - New `-s, --shape <object|array|auto>` for OHLCV tuple vs object JSON output. Auto-detects shape on JSON input and preserves it through the pipeline by default.
 - `-i` always wins over stdin, even in non-TTY contexts (CI, scripts).
 - Malformed CSV rows reported to stderr; zero valid rows now exits non-zero instead of producing empty output.
-- `bin.ohlc` → `dist/cli.js` (was `src/cli.ts`, non-functional post-install).
+- npm bin `ohlc-resample` → `dist/cli.js` (was `src/cli.ts`, non-functional post-install), so `npx ohlc-resample <args>` works without spelling the bin name. The `install.sh` launcher still installs a local `ohlc` binary to `~/.local/bin`.
 - SIGINT/SIGTERM preserve a previously-set non-zero exit code.
 
 **Library**
