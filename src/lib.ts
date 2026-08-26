@@ -4,6 +4,8 @@ import { OHLCVField } from './types.js';
 import _ from 'lodash';
 
 import { parquetOhlcvRowsAsync, parquetTicksAsync } from './parquet.js';
+import { mapOhlcvIterable, mapTickIterable } from './map.js';
+import type { OhlcvMap, TickMap } from './map.js';
 
 /**
  * Resample OHLCV data to a coarser timeframe. The return type follows the
@@ -182,22 +184,26 @@ export function resampleOhlcvAsync(
 ): AsyncGenerator<IOHLCV>;
 export function resampleOhlcvAsync(
   source: AsyncIterable<OHLCV | IOHLCV>,
-  options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number }
+  options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number; map?: OhlcvMap }
 ): AsyncGenerator<OHLCV | IOHLCV>;
 export function resampleOhlcvAsync(
   source: string,
-  options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number }
+  options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number; map?: OhlcvMap }
 ): AsyncGenerator<OHLCV>;
 export async function* resampleOhlcvAsync(
   source: AsyncIterable<OHLCV | IOHLCV> | string,
-  options: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number } = {}
+  options: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number; map?: OhlcvMap } = {}
 ): AsyncGenerator<OHLCV | IOHLCV> {
 
-  const { baseTimeframe = 60, newTimeframe = 300, outOfOrderMs = 0 } = options;
+  const { baseTimeframe = 60, newTimeframe = 300, outOfOrderMs = 0, map } = options;
   // A string is treated as a Parquet file path: rows are streamed one row
-  // group at a time, so memory stays bounded by the largest row group.
+  // group at a time, so memory stays bounded by the largest row group. The
+  // optional per-record `map` (Record or function form) applies to the
+  // parquet rows and to object-shaped async iterable items alike.
   const input: AsyncIterable<OHLCV | IOHLCV> =
-    typeof source === 'string' ? parquetOhlcvRowsAsync(source) : source;
+    typeof source === 'string'
+      ? parquetOhlcvRowsAsync(source, map)
+      : (map ? mapOhlcvIterable(source, map) : source);
   if (!Number.isFinite(baseTimeframe) || baseTimeframe <= 0) {
     throw new Error("baseFrame must be a positive number");
   }
@@ -394,21 +400,23 @@ export const resampleTicksByTime = (
  */
 export function resampleTicksByTimeAsync(
   source: AsyncIterable<TradeTick>,
-  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number }
+  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number; map?: TickMap }
 ): AsyncGenerator<IOHLCV>;
 export function resampleTicksByTimeAsync(
   source: string,
-  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number }
+  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number; map?: TickMap }
 ): AsyncGenerator<IOHLCV>;
 export async function* resampleTicksByTimeAsync(
   source: AsyncIterable<TradeTick> | string,
-  { timeframe = 60, includeLatestCandle = true, fillGaps = false, outOfOrderMs = 0 }:
-    { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean, outOfOrderMs?: number } = {}
+  { timeframe = 60, includeLatestCandle = true, fillGaps = false, outOfOrderMs = 0, map }:
+    { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean, outOfOrderMs?: number, map?: TickMap } = {}
 ): AsyncGenerator<IOHLCV> {
 
   // A string is treated as a Parquet file path of tick rows.
   const input: AsyncIterable<TradeTick> =
-    typeof source === 'string' ? parquetTicksAsync(source) : source;
+    typeof source === 'string'
+      ? parquetTicksAsync(source, map)
+      : (map ? mapTickIterable(source, map) : source);
   const msFrame = timeframe * 1000;
   const buckets = new Map<number, TradeTick[]>();
   let maxTime = -Infinity;
@@ -491,20 +499,22 @@ export const resampleTicksByCount = (tickData: Iterable<Trade>,
  */
 export function resampleTicksByCountAsync(
   source: AsyncIterable<TradeTick>,
-  options?: { tickCount?: number }
+  options?: { tickCount?: number; map?: TickMap }
 ): AsyncGenerator<IOHLCV>;
 export function resampleTicksByCountAsync(
   source: string,
-  options?: { tickCount?: number }
+  options?: { tickCount?: number; map?: TickMap }
 ): AsyncGenerator<IOHLCV>;
 export async function* resampleTicksByCountAsync(
   source: AsyncIterable<TradeTick> | string,
-  { tickCount = 5 }: { tickCount?: number } = {}
+  { tickCount = 5, map }: { tickCount?: number, map?: TickMap } = {}
 ): AsyncGenerator<IOHLCV> {
 
   // A string is treated as a Parquet file path of tick rows.
   const input: AsyncIterable<TradeTick> =
-    typeof source === 'string' ? parquetTicksAsync(source) : source;
+    typeof source === 'string'
+      ? parquetTicksAsync(source, map)
+      : (map ? mapTickIterable(source, map) : source);
   if (tickCount < 1) {
     throw new Error("Convert cannot be smaller than 1");
   }

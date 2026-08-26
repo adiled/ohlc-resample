@@ -427,6 +427,92 @@ describe('CLI', () => {
     });
   });
 
+  describe('--map option', () => {
+    test('maps CSV header keys (timestamp/amount) via --map', async () => {
+      await withTimeout(async () => {
+        const mappedCsv = path.join(tempDir, 'mapped.csv');
+        await fs.promises.writeFile(
+          mappedCsv,
+          'timestamp,open,high,low,close,amount\n' +
+          testData.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n'),
+        );
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', mappedCsv, '--map', 'time=timestamp,volume=amount'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+        expect(process.exitCode).toBe(0);
+      }, 1000, 'map CSV header');
+    });
+
+    test('maps JSON object keys (timestamp/o/h/l/c/vol) via --map', async () => {
+      await withTimeout(async () => {
+        const mappedJson = path.join(tempDir, 'mapped.json');
+        const rows = testData.map(d => ({
+          timestamp: d.time, o: d.open, h: d.high, l: d.low, c: d.close, vol: d.volume,
+        }));
+        await fs.promises.writeFile(mappedJson, JSON.stringify(rows, null, 2));
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', mappedJson, '--map', 'time=timestamp,open=o,high=h,low=l,close=c,volume=vol'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'map JSON object');
+    });
+
+    test('maps .parquet arbitrary column names via --map', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv_custom.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', parquetPath, '--map', 'time=mytime,open=myopen,high=myhigh,low=mylow,close=myclose,volume=myvol'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(7);
+        expect(output[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+        expect(process.exitCode).toBe(0);
+      }, 2000, 'map parquet custom');
+    });
+
+    test('maps piped CSV via --map (buffer path)', async () => {
+      await withTimeout(async () => {
+        const csvContent =
+          'timestamp,open,high,low,close,amount\n' +
+          testData.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n');
+        const stdin = readableFromString(csvContent);
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '--map', 'time=timestamp,volume=amount'],
+          stdin, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'map pipe CSV');
+    });
+
+    test('rejects unknown --map field', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '--map', 'foo=bar'], undefined, out.writable, err.writable);
+        expect(err.getData()).toContain('Unknown --map field "foo"');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'invalid map field');
+    });
+  });
+
   describe('--input-format', () => {
     test('auto-detects JSON from pipe', async () => {
       await withTimeout(async () => {

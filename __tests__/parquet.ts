@@ -115,9 +115,43 @@ test('parquet OHLCV file streams equal the array API', async () => {
   expect(got).toEqual(expectedOhlcv);
 });
 
-test('parquet OHLCV with alias columns (timestamp/o/h/l/c/vol) streams equal the array API', async () => {
-  const got = await collect(resampleOhlcvAsync(file('ohlcv_alias.parquet'), { baseTimeframe: 60, newTimeframe: 300 }));
+test('parquet OHLCV with alias columns (timestamp/o/h/l/c/vol) requires a map', async () => {
+  // Without a map, only canonical column names are read (no aliasing).
+  await expect(
+    collect(resampleOhlcvAsync(file('ohlcv_alias.parquet'), { baseTimeframe: 60, newTimeframe: 300 })),
+  ).rejects.toThrow('missing required column "time"');
+});
+
+test('parquet OHLCV with a Record map on arbitrary column names equals the array API', async () => {
+  const map = { time: 'mytime', open: 'myopen', high: 'myhigh', low: 'mylow', close: 'myclose', volume: 'myvol' };
+  const got = await collect(
+    resampleOhlcvAsync(file('ohlcv_custom.parquet'), { baseTimeframe: 60, newTimeframe: 300, map }),
+  );
   expect(got).toEqual(expectedOhlcv);
+});
+
+test('parquet OHLCV with a function map on arbitrary column names equals the array API', async () => {
+  const got = await collect(
+    resampleOhlcvAsync(file('ohlcv_custom.parquet'), {
+      baseTimeframe: 60,
+      newTimeframe: 300,
+      map: (r) => ({
+        time: r.mytime, open: r.myopen, high: r.myhigh,
+        low: r.mylow, close: r.myclose, volume: r.myvol,
+      }),
+    }),
+  );
+  expect(got).toEqual(expectedOhlcv);
+});
+
+test('parquet partial Record map falls back to canonical keys and throws when absent', async () => {
+  await expect(
+    collect(resampleOhlcvAsync(file('ohlcv_custom.parquet'), {
+      baseTimeframe: 60,
+      newTimeframe: 300,
+      map: { time: 'mytime' },
+    })),
+  ).rejects.toThrow('missing required column "open"');
 });
 
 test('parquet microsecond timestamps are converted to ms', async () => {
@@ -146,6 +180,26 @@ test('parquet ticks by time equal the array API', async () => {
 test('parquet ticks by count equal the array API (includes partial trailing group)', async () => {
   const expected = resampleTicksByCount(ticks, { tickCount: 5 });
   const got = await collect(resampleTicksByCountAsync(file('ticks.parquet'), { tickCount: 5 }));
+  expect(got).toEqual(expected);
+});
+
+test('parquet ticks with a Record map on arbitrary column names equals the array API', async () => {
+  const expected = resampleTicksByTime(ticks, { timeframe: 60 });
+  const map = { time: 'tm', price: 'pr', quantity: 'qn' };
+  const got = await collect(
+    resampleTicksByTimeAsync(file('ticks_custom.parquet'), { timeframe: 60, map }),
+  );
+  expect(got).toEqual(expected);
+});
+
+test('parquet ticks with a function map on arbitrary column names equals the array API', async () => {
+  const expected = resampleTicksByCount(ticks, { tickCount: 5 });
+  const got = await collect(
+    resampleTicksByCountAsync(file('ticks_custom.parquet'), {
+      tickCount: 5,
+      map: (r) => ({ time: r.tm, price: r.pr, quantity: r.qn }),
+    }),
+  );
   expect(got).toEqual(expected);
 });
 

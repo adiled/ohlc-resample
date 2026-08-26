@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { program as commanderProgram } from 'commander';
 import { IOHLCV, OHLCV } from './types.js';
 import { resampleOhlcv, resampleOhlcvAsync } from './lib.js';
+import { mapToOhlcv } from './map.js';
+import type { OhlcvFieldMap, OhlcvMap } from './map.js';
 
 // Read version from package.json so there's a single source of truth.
 // `dist/cli.js` is one level deep; `../package.json` resolves to the
@@ -24,14 +26,16 @@ type OutputFormat = 'csv' | 'json' | 'jsonl';
 const REQUIRED_FIELDS = ['time', 'open', 'high', 'low', 'close', 'volume'] as const;
 
 /**
- * Parse a CSV string of OHLCV rows into `IOHLCV[]`. Accepts an optional
- * header row matching the canonical field order; otherwise treats the first
- * line as data. Malformed rows (wrong column count, missing values, or
- * non-numeric cells) are skipped and counted in `skipped`.
+ * Parse a CSV string of OHLCV rows into `IOHLCV[]`. Without a map, accepts an
+ * optional header row matching the canonical field order and otherwise treats
+ * the first line as data. With a map (Record form), the first line is always
+ * treated as the header and each row is mapped per-record via `mapToOhlcv`.
+ * Malformed rows (wrong column count, missing values, or non-numeric cells)
+ * are skipped and counted in `skipped`.
  *
  * @throws if the input is empty.
  */
-export function parseCSV(data: string): { rows: IOHLCV[]; skipped: number } {
+export function parseCSV(data: string, map?: OhlcvMap): { rows: IOHLCV[]; skipped: number } {
   const trimmed = data.trim();
   if (!trimmed) {
     throw new Error('Error: CSV must have at least one row');
@@ -39,9 +43,18 @@ export function parseCSV(data: string): { rows: IOHLCV[]; skipped: number } {
   const lines = trimmed.split('\n');
 
   const firstLine = lines[0].trim().split(',').map(h => h.trim());
-  const hasHeader = REQUIRED_FIELDS.every((f, i) => firstLine[i] === f);
-  const headers = hasHeader ? firstLine : (REQUIRED_FIELDS as readonly string[]);
-  const startIndex = hasHeader ? 1 : 0;
+  let hasHeader: boolean;
+  let headers: readonly string[];
+  let startIndex: number;
+  if (map) {
+    hasHeader = true;
+    headers = firstLine;
+    startIndex = 1;
+  } else {
+    hasHeader = REQUIRED_FIELDS.every((f, i) => firstLine[i] === f);
+    headers = hasHeader ? firstLine : (REQUIRED_FIELDS as readonly string[]);
+    startIndex = hasHeader ? 1 : 0;
+  }
 
   const rows: IOHLCV[] = [];
   let skipped = 0;
@@ -54,6 +67,16 @@ export function parseCSV(data: string): { rows: IOHLCV[]; skipped: number } {
 
     const row: Record<string, string> = {};
     headers.forEach((header, index) => { row[header] = values[index]; });
+
+    if (map) {
+      const candle = mapToOhlcv(row, map);
+      if (!REQUIRED_FIELDS.every(f => Number.isFinite(Number(candle[f])))) {
+        skipped++;
+        continue;
+      }
+      rows.push(candle);
+      continue;
+    }
 
     if (REQUIRED_FIELDS.some(f => row[f] === undefined || row[f] === '')) {
       skipped++;
@@ -77,14 +100,19 @@ export function parseCSV(data: string): { rows: IOHLCV[]; skipped: number } {
 
 /**
  * Parse a single CSV data line into an `IOHLCV` given the header order, or
- * return `null` for malformed rows.
+ * return `null` for malformed rows. With a map, the row is mapped per-record.
  */
-function parseCSVLine(line: string, headers: readonly string[]): IOHLCV | null {
+function parseCSVLine(line: string, headers: readonly string[], map?: OhlcvMap): IOHLCV | null {
   const values = line.split(',').map(v => v.trim());
   if (values.length !== headers.length) return null;
 
   const row: Record<string, string> = {};
   headers.forEach((header, index) => { row[header] = values[index]; });
+
+  if (map) {
+    const candle = mapToOhlcv(row, map);
+    return REQUIRED_FIELDS.every(f => Number.isFinite(Number(candle[f]))) ? candle : null;
+  }
 
   if (REQUIRED_FIELDS.some(f => row[f] === undefined || row[f] === '')) return null;
   if (REQUIRED_FIELDS.some(f => isNaN(Number(row[f])))) return null;
@@ -99,7 +127,7 @@ function parseCSVLine(line: string, headers: readonly string[]): IOHLCV | null {
 }
 
 /** Parse a single JSONL line into an OHLCV tuple or IOHLCV object, or null. */
-function parseJSONLLine(line: string): OHLCV | IOHLCV | null {
+function parseJSONLLine(line: string, map?: OhlcvMap): OHLCV | IOHLCV | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
@@ -113,6 +141,10 @@ function parseJSONLLine(line: string): OHLCV | IOHLCV | null {
   }
   if (parsed && typeof parsed === 'object') {
     const o = parsed as Record<string, unknown>;
+    if (map) {
+      const candle = mapToOhlcv(o, map);
+      return REQUIRED_FIELDS.every(f => Number.isFinite(Number(candle[f]))) ? candle : null;
+    }
     if (!REQUIRED_FIELDS.every(f => o[f] !== undefined && o[f] !== '' && !isNaN(Number(o[f])))) {
       return null;
     }
@@ -193,9 +225,9 @@ interface ParsedInput {
   shape: Shape;
 }
 
-function parseInput(raw: string, format: InputFormat): ParsedInput {
+function parseInput(raw: string, format: InputFormat, map?: OhlcvMap): ParsedInput {
   if (format === 'csv') {
-    const { rows, skipped } = parseCSV(raw);
+    const { rows, skipped } = parseCSV(raw, map);
     if (rows.length === 0) {
       throw new Error('Error: no valid OHLCV rows found in input');
     }
@@ -210,7 +242,13 @@ function parseInput(raw: string, format: InputFormat): ParsedInput {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new Error('Error: JSON input must be a non-empty array of OHLCV records');
   }
-  return { data: parsed as IOHLCV[] | OHLCV[], shape: detectShape(parsed) };
+  const shape = detectShape(parsed);
+  // With a map, remap object-shaped records per-record; tuple arrays have no
+  // keys to map and pass through unchanged.
+  if (map && shape === 'object') {
+    parsed = (parsed as IOHLCV[]).map(o => mapToOhlcv(o as Record<string, unknown>, map)) as unknown;
+  }
+  return { data: parsed as IOHLCV[] | OHLCV[], shape };
 }
 
 /**
@@ -223,12 +261,15 @@ async function* lineReader(stream: NodeJS.ReadableStream): AsyncGenerator<string
 }
 
 /**
- * Yield parsed OHLCV objects from a CSV line stream. Detects the header on
- * the first non-empty line; malformed rows are counted via `onSkipped`.
+ * Yield parsed OHLCV objects from a CSV line stream. Without a map, detects
+ * the canonical header on the first non-empty line; with a map, the first
+ * non-empty line is always treated as the header and rows are mapped per
+ * record. Malformed rows are counted via `onSkipped`.
  */
 async function* csvCandleReader(
   lines: AsyncGenerator<string>,
   onSkipped: () => void,
+  map?: OhlcvMap,
 ): AsyncGenerator<IOHLCV> {
   let headers = REQUIRED_FIELDS as readonly string[];
   let headerSeen = false;
@@ -238,14 +279,17 @@ async function* csvCandleReader(
     if (!trimmed) continue;
     if (!started) {
       const first = trimmed.split(',').map(h => h.trim());
-      if (REQUIRED_FIELDS.every((f, i) => first[i] === f)) {
+      if (map) {
+        headers = first as readonly string[];
+        headerSeen = true;
+      } else if (REQUIRED_FIELDS.every((f, i) => first[i] === f)) {
         headerSeen = true;
         headers = first as readonly string[];
       }
       started = true;
       if (headerSeen) continue;
     }
-    const candle = parseCSVLine(trimmed, headers);
+    const candle = parseCSVLine(trimmed, headers, map);
     if (candle === null) { onSkipped(); continue; }
     yield candle;
   }
@@ -253,16 +297,18 @@ async function* csvCandleReader(
 
 /**
  * Yield parsed OHLCV candles from a JSONL line stream (one JSON record per
- * line). Malformed lines are counted via `onSkipped`.
+ * line). With a map, object records are remapped per-record; tuples pass
+ * through unchanged. Malformed lines are counted via `onSkipped`.
  */
 async function* jsonlCandleReader(
   lines: AsyncGenerator<string>,
   onSkipped: () => void,
+  map?: OhlcvMap,
 ): AsyncGenerator<OHLCV | IOHLCV> {
   for await (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const candle = parseJSONLLine(trimmed);
+    const candle = parseJSONLLine(trimmed, map);
     if (candle === null) { onSkipped(); continue; }
     yield candle;
   }
@@ -323,7 +369,7 @@ function writeChunk(stream: NodeJS.WritableStream, data: string): Promise<void> 
 async function runStreaming(
   source: NodeJS.ReadableStream,
   isCsv: boolean,
-  options: { baseTimeframe: number; newTimeframe: number; format: OutputFormat; shape: ShapeOption },
+  options: { baseTimeframe: number; newTimeframe: number; format: OutputFormat; shape: ShapeOption; map?: OhlcvMap },
   stdout: NodeJS.WritableStream,
   stderr: NodeJS.WritableStream,
   outputPath?: string,
@@ -331,9 +377,11 @@ async function runStreaming(
   const lines = lineReader(source);
   let skipped = 0;
   const candleSource = isCsv
-    ? csvCandleReader(lines, () => skipped++)
-    : jsonlCandleReader(lines, () => skipped++);
+    ? csvCandleReader(lines, () => skipped++, options.map)
+    : jsonlCandleReader(lines, () => skipped++, options.map);
 
+  // The readers already applied the per-record map, so the resampler receives
+  // canonical candles and no further mapping is needed.
   const iter = resampleOhlcvAsync(candleSource as AsyncIterable<OHLCV | IOHLCV>, { baseTimeframe: options.baseTimeframe, newTimeframe: options.newTimeframe });
 
   await writeResampledStream(iter, options.format, options.shape, stdout, outputPath);
@@ -385,6 +433,35 @@ async function writeResampledStream(
 }
 
 /**
+ * Parse the `--map` flag (Record form only; a mapping function can't be a CLI
+ * arg) into an `OhlcvFieldMap`. Format: `field=sourceKey` entries separated by
+ * commas, e.g. `time=timestamp,close=cl,volume=vol`.
+ */
+function parseMapFlag(value: string | undefined): OhlcvMap | undefined {
+  if (!value) return undefined;
+  const valid = new Set(['time', 'open', 'high', 'low', 'close', 'volume']);
+  const map: OhlcvFieldMap = {};
+  for (const part of value.split(',')) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) {
+      throw new Error(`Invalid --map entry "${part.trim()}" (expected field=sourceKey)`);
+    }
+    const field = part.slice(0, eq).trim();
+    const key = part.slice(eq + 1).trim();
+    if (!key) {
+      throw new Error(`Invalid --map entry "${part.trim()}" (empty source key)`);
+    }
+    if (!valid.has(field)) {
+      throw new Error(
+        `Unknown --map field "${field}" (expected one of: time, open, high, low, close, volume)`,
+      );
+    }
+    map[field as keyof IOHLCV] = key;
+  }
+  return map;
+}
+
+/**
  * Run the OHLCV resampling CLI. Streams and TTY flag are injectable for
  * testing.
  */
@@ -404,23 +481,24 @@ export async function runCli(
     .option('-s, --shape <shape>', 'Output shape for JSON (object, array, auto)', 'auto')
     .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
     .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
+    .option('--map <mapping>', 'Map record fields to canonical keys (e.g. time=timestamp,close=cl,volume=vol)')
     .version(PACKAGE_VERSION);
 
   program.parse(argv);
   program.showHelpAfterError();
   const options = program.opts();
 
-  async function readJsonFileData(filePath: string): Promise<ParsedInput> {
+  async function readJsonFileData(filePath: string, map?: OhlcvMap): Promise<ParsedInput> {
     let raw: string;
     try {
       raw = await fs.promises.readFile(path.resolve(filePath), 'utf8');
     } catch (err) {
       throw prefixError(err);
     }
-    return parseInput(raw, 'json');
+    return parseInput(raw, 'json', map);
   }
 
-  async function readPipeData(stream: NodeJS.ReadableStream): Promise<ParsedInput> {
+  async function readPipeData(stream: NodeJS.ReadableStream, map?: OhlcvMap): Promise<ParsedInput> {
     const raw = await new Promise<string>((resolve, reject) => {
       let buf = '';
       stream.on('data', chunk => { buf += chunk; });
@@ -429,9 +507,9 @@ export async function runCli(
     });
     const requested = options.inputFormat as InputFormatOption;
     const format: InputFormat = requested === 'auto' ? detectFormat(raw) : requested;
-    const parsed = parseInput(raw, format);
+    const parsed = parseInput(raw, format, map);
     if (format === 'csv') {
-      const { skipped } = parseCSV(raw);
+      const { skipped } = parseCSV(raw, map);
       if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed CSV row(s)\n`);
     }
     return parsed;
@@ -465,6 +543,7 @@ export async function runCli(
       throw new Error('New timeframe must be greater than base timeframe');
     }
     const outputFormat = options.format as OutputFormat;
+    const map = parseMapFlag(options.map as string | undefined);
 
     const input = options.input as string | undefined;
     if (input) {
@@ -489,6 +568,7 @@ export async function runCli(
             newTimeframe,
             format: outputFormat,
             shape: options.shape as ShapeOption,
+            map,
           },
           stdout,
           stderr,
@@ -504,7 +584,7 @@ export async function runCli(
         } catch (err) {
           throw prefixError(err);
         }
-        const iter = resampleOhlcvAsync(input, { baseTimeframe, newTimeframe });
+        const iter = resampleOhlcvAsync(input, { baseTimeframe, newTimeframe, map });
         await writeResampledStream(
           iter,
           outputFormat,
@@ -516,7 +596,7 @@ export async function runCli(
       }
       // JSON array files stay buffer-based (documented limitation): a JSON
       // document must be fully parsed to know where the array ends.
-      const parsed = await readJsonFileData(input);
+      const parsed = await readJsonFileData(input, map);
       const outputShape: Shape = options.shape === 'auto' ? parsed.shape : options.shape;
       const resampled = resampleOhlcv(parsed.data as IOHLCV[], { baseTimeframe, newTimeframe });
       await writeOutput(resampled, outputFormat, outputShape, options.output);
@@ -535,6 +615,7 @@ export async function runCli(
           newTimeframe,
           format: outputFormat,
           shape: options.shape as ShapeOption,
+          map,
         },
         stdout,
         stderr,
@@ -543,7 +624,7 @@ export async function runCli(
       return;
     }
 
-    const parsed = await readPipeData(stdin);
+    const parsed = await readPipeData(stdin, map);
     const outputShape: Shape = options.shape === 'auto' ? parsed.shape : options.shape;
     const resampled = resampleOhlcv(parsed.data as IOHLCV[], { baseTimeframe, newTimeframe });
     await writeOutput(resampled, outputFormat, outputShape, options.output);

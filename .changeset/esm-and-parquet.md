@@ -24,16 +24,32 @@ the door" before the future native engine).
   `AsyncIterable`) and return an async generator. Rows are streamed
   **row-group by row-group**, so memory is bounded by the largest row group,
   not the file size.
-- Column names are matched **loosely by alias** (`timestamp`/`ts`/`date`,
-  `o`/`open`, `vol`/`volume`/`qty`/`quantity`, ...). Timestamps in ms/µs/ns/
-  days are converted to epoch-milliseconds. `time`/`open`/`high`/`low`/`close`
-  are required (throw if missing); `volume` is optional and defaults to 0.
+- Column names are read by **exact canonical name**; any other layout is
+  supplied via a new **`map` option** (below), so there is no name guessing.
+  Timestamps in ms/µs/ns/days are converted to epoch-milliseconds.
+  `time`/`open`/`high`/`low`/`close` are required (throw if missing);
+  `volume` is optional and defaults to 0.
 - The **sync** functions (`resampleOhlcv`, `resampleTicksByTime`,
   `resampleTicksByCount`) stay array/iterable-only — Parquet needs an async
   reader, so it is only wired into the async variants.
 
+**Per-record `map` option (CSV / Parquet / JSON)**
+
+- The async variants take a new `map` option that translates **each input
+  record** into canonical OHLCV. Two shapes are accepted:
+  - **Record form**: keys are canonical IOHLCV fields, values are the keys to
+    read from each input record; fields absent from the map use the canonical
+    key directly (e.g. `{ time: 'timestamp', volume: 'amount' }`).
+  - **Function form**: a full transform `(record) => IOHLCV`.
+- Ticks accept the same shapes over `time`/`price`/`quantity`. Positional
+  inputs (tuples, `Float64Array`) have no keys to map and are unaffected.
+
 **CLI**
 
+- Added a `--map field=sourceKey` flag (comma-separated) that remaps CSV
+  headers, JSON object keys, and Parquet columns; with `--map`, a CSV's first
+  line is always treated as the header. A mapping function can't be a CLI arg,
+  so the flag accepts the Record form only.
 - `.parquet` file extensions are accepted and streamed row-group by
   row-group through the async resampler, emitting CSV/JSON/JSONL
   incrementally. Unsupported-extension error now names Parquet.

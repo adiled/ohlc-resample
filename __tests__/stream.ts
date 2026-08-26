@@ -279,3 +279,54 @@ test("async resampleTicksByTime heals out-of-order ticks within window", async (
   // bucket A (960000) merged the late tick: close/high from late, volume summed
   expect(actual[0]).toMatchObject({ time: 960000, open: 10, high: 99, close: 99, volume: 3 });
 });
+
+// --- per-record map option (CCXT-style keys: timestamp / amount) -----------
+
+test("async resampleOhlcv with a Record map remaps object records", async () => {
+  // Mapped object records resample to object-shaped output.
+  const expected = resampleOhlcv(object1m, { baseTimeframe: 60, newTimeframe: 300 });
+  const ccxt = object1m.map(c => ({
+    timestamp: c.time, open: c.open, high: c.high, low: c.low, close: c.close, amount: c.volume,
+  }));
+  const actual = await collectAsync(resampleOhlcvAsync(asAsync(ccxt), {
+    baseTimeframe: 60,
+    newTimeframe: 300,
+    map: { time: 'timestamp', volume: 'amount' },
+  }));
+  expect(actual).toEqual(expected);
+});
+
+test("async resampleOhlcv with a function map transforms each record", async () => {
+  const expected = resampleOhlcv(object1m, { baseTimeframe: 60, newTimeframe: 300 });
+  const ccxt = object1m.map(c => ({
+    timestamp: c.time, open: c.open, high: c.high, low: c.low, close: c.close, amount: c.volume,
+  }));
+  const actual = await collectAsync(resampleOhlcvAsync(asAsync(ccxt), {
+    baseTimeframe: 60,
+    newTimeframe: 300,
+    map: (r) => ({ time: r.timestamp, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.amount }),
+  }));
+  expect(actual).toEqual(expected);
+});
+
+test("async resampleTicksByTime with a Record map remaps tick records", async () => {
+  const expected = resampleTicksByTime(ticks, { timeframe: 60 });
+  const ccxt = ticks.map(t => ({ timestamp: t.time, price: t.price, amount: t.quantity }));
+  const actual = await collectAsync(resampleTicksByTimeAsync(asAsync(ccxt), {
+    timeframe: 60,
+    map: { time: 'timestamp', quantity: 'amount' },
+  }));
+  expect(actual).toEqual(expected);
+});
+
+test("async resampleOhlcv with a map passes tuple records through unchanged", async () => {
+  // Tuple records have no keys to map; the map must be a no-op for them.
+  const tuples: OHLCV[] = object1m.map(c => [c.time, c.open, c.high, c.low, c.close, c.volume]);
+  const expected = resampleOhlcv(tuples, { baseTimeframe: 60, newTimeframe: 300 });
+  const actual = await collectAsync(resampleOhlcvAsync(asAsync(tuples), {
+    baseTimeframe: 60,
+    newTimeframe: 300,
+    map: { time: 'timestamp' },
+  }));
+  expect(actual).toEqual(expected);
+});

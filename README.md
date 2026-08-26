@@ -168,13 +168,61 @@ for await (const candle of resampleTicksByTimeAsync("ticks.parquet", {
 }
 ```
 
-Column names are matched **loosely by alias**, so `timestamp`/`ts`/`date`,
-`o`/`open`, `vol`/`volume`/`qty`/`quantity`, and friends all work. Timestamps
+Column names are read by **exact canonical name** (`time`, `open`, `high`,
+`low`, `close`, `volume`, and `time`/`price`/`quantity` for ticks). Timestamps
 in any unit (ms / µs / ns / days) are converted to epoch-milliseconds. If a
-required column (`time`, `open`, `high`, `low`, `close`) is missing, the call
-throws; `volume` is optional and defaults to `0`. Parquet (file) input is
-supported **only on the async variants** — the sync functions stay array/
-iterable-only.
+required column is missing, the call throws; OHLCV `volume` is optional and
+defaults to `0`. Any other column layout must be supplied with the `map`
+option below. Parquet (file) input is supported **only on the async variants**
+— the sync functions stay array/iterable-only.
+
+### Per-record `map` option
+
+The async variants take a `map` option that translates **each input record**
+into canonical OHLCV. It works uniformly across any named-schema input —
+Parquet rows, CSV header rows, JSON objects — and is how you adapt foreign
+schemas (CCXT's `timestamp`/`amount`, arbitrary Parquet columns, etc.) instead
+of relying on name guessing. Two shapes are accepted:
+
+1. **Record form** — keys are canonical IOHLCV fields, values are the keys to
+   read from each input record. Fields absent from the map use the canonical
+   key directly:
+
+   ```typescript
+   // read `time` from `timestamp`, `volume` from `amount`; the rest stay canonical
+   for await (const candle of resampleOhlcvAsync(readableStream, {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: { time: 'timestamp', volume: 'amount' },
+   })) { }
+
+   // arbitrary Parquet columns
+   for await (const candle of resampleOhlcvAsync('data.parquet', {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: { time: 'mytime', open: 'myopen', high: 'myhigh', low: 'mylow', close: 'myclose', volume: 'myvol' },
+   })) { }
+   ```
+
+2. **Function form** — a full transform `(record) => IOHLCV` for complete
+   control:
+
+   ```typescript
+   for await (const candle of resampleOhlcvAsync(readableStream, {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: (r) => ({
+       time: r.timestamp, open: r.open, high: r.high,
+       low: r.low, close: r.close, volume: r.amount,
+     }),
+   })) { }
+   ```
+
+Ticks accept the same shapes over `time`/`price`/`quantity` (e.g. `map:
+{ time: 'timestamp', quantity: 'amount' }`). Positional inputs — `OHLCV`
+tuples and `Float64Array` — have no keys to map and are unaffected. The sync
+functions take canonical arrays, so `map` is only relevant to the async
+variants (file paths and record-shaped streams).
 
 ## Module format
 
@@ -318,6 +366,7 @@ Options:
   -s, --shape <shape>            Output shape for JSON: object, array, auto (default: "auto")
   -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
+      --map <mapping>            Map record fields to canonical keys (e.g. time=timestamp,volume=amount)
   -h, --help                     Display help for command
 ```
 
@@ -358,6 +407,26 @@ cat data.jsonl | ohlc-resample --input-format jsonl -f jsonl
 ### Input Formats
 
 The CLI supports CSV, JSON, and JSONL input formats:
+
+#### Mapping non-canonical fields (`--map`)
+
+When your input uses different field names (CCXT-style `timestamp`/`amount`, a
+CSV header in a foreign order, arbitrary Parquet columns), pass `--map` with
+`field=sourceKey` entries separated by commas. It applies to CSV headers,
+JSON object keys, and Parquet columns; tuple (array) records have no keys and
+are unaffected. With `--map`, a CSV's first line is always treated as the
+header.
+
+```bash
+# CCXT-style JSON objects: timestamp + amount
+ohlc-resample -i data.json --map time=timestamp,volume=amount
+
+# Foreign CSV header
+ohlc-resample -i data.csv --map time=timestamp,volume=amount
+
+# Arbitrary Parquet columns
+ohlc-resample -i data.parquet --map time=mytime,open=myopen,high=myhigh,low=mylow,close=myclose,volume=myvol
+```
 
 #### CSV Format
 ```csv
