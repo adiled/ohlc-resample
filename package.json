@@ -8,7 +8,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "engines": {
@@ -19,8 +20,8 @@
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build": "tsc --build",
-    "build:check": "node -e \"import('./dist/index.js')\"",
+    "build": "tsc --build && node scripts/make-cjs-wrapper.mjs",
+    "build:check": "node -e \"import('./dist/index.js')\" && node -e \"const m=require('./dist/index.cjs');m.resampleOhlcv([{time:1609459200000,open:100,high:105,low:95,close:102,volume:500}],{baseTimeframe:60,newTimeframe:300})\"",
     "prepublishOnly": "npm test && npm run build && npm run build:check",
     "test": "vitest run",
     "test:watch": "vitest",

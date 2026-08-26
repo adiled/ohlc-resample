@@ -1,17 +1,19 @@
 ---
-"ohlc-resample": major
+"ohlc-resample": minor
 ---
 
-Make the package **ESM-only** and add **Parquet file input** (the "foot in the
-door" before the future native engine).
+Add **Parquet file input** and ship a **dual ESM + CJS** package (the "foot in
+the door" before the future native engine).
 
-**Breaking: ESM-only**
+**Module format: ESM-first with a CJS `require()` wrapper (backward compatible)**
 
-- The package is now `"type": "module"` and emits ESM. `import` works;
-  `require('ohlc-resample')` is no longer supported (there is no CommonJS
-  build). The Parquet reader is ESM-native (`hyparquet` has no CJS build), so
-  this keeps the dependency graph simple and lets future Rust/C++ native
-  modules slot in cleanly.
+- The package is now `"type": "module"` and emits ESM. `import` keeps
+  working. `require('ohlc-resample')` also keeps working: the build emits a
+  one-line `dist/index.cjs` re-export (`module.exports = require('./index.js')`),
+  which uses Node's synchronous `require(esm)` (stable since 23.7) to load the
+  ESM build and its graph (including `hyparquet`) with no top-level await.
+  Because there is a single real implementation, both `require` and `import`
+  resolve to the **same module instance** — no dual-package hazard.
 - The CLI's `require.main` guard and `require('../package.json')` version read
   were converted to ESM (`import.meta` + `createRequire`).
 

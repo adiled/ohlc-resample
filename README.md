@@ -178,10 +178,14 @@ iterable-only.
 
 ## Module format
 
-`ohlc-resample` is **ESM-only** (`"type": "module"`). Use `import`, not
-`require`. The Parquet reader is ESM-native (`hyparquet` has no CommonJS build),
-so keeping the package ESM keeps the dependency graph simple and future
-Rust/C++ native modules slot in cleanly.
+`ohlc-resample` is **ESM-first with a CommonJS wrapper** (`"type": "module"`).
+Use `import` for the full API. `require('ohlc-resample')` also works: the build
+emits `dist/index.cjs`, a one-line re-export that loads the ESM build via
+Node's synchronous `require(esm)` (stable since 23.7), so both entry points
+resolve to the **same module instance** — there's no dual-package hazard and
+no CommonJS build to maintain. The Parquet reader is ESM-native
+(`hyparquet` has no CommonJS build), which is why the package is ESM-first; a
+thin wrapper keeps `require()` consumers working.
 
 ## Types
 
