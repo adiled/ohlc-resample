@@ -16,7 +16,8 @@
     "node": ">=26"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.js.map"
   ],
   "scripts": {
     "prebuild": "rimraf dist",
