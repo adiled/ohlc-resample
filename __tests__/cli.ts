@@ -114,7 +114,7 @@ describe('CLI', () => {
         const out = captureWritable();
         const err = captureWritable();
         await runCli(['node', 'cli.js', '-i', invalidFile], undefined, out.writable, err.writable);
-        expect(err.getData()).toContain('Only CSV and JSON files are accepted');
+        expect(err.getData()).toContain('Only CSV, JSON, and Parquet files are accepted');
         expect(process.exitCode).toBe(1);
       }, 1000, 'reject invalid extension');
     });
@@ -387,6 +387,31 @@ describe('CLI', () => {
         expect(err.getData()).toContain('skipped 1');
         expect(JSON.parse(out.getData())).toHaveLength(1);
       }, 1000, 'stream bad CSV');
+    });
+
+    test('streams .parquet file -> JSON array output (tuples)', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', parquetPath], undefined, out.writable, err.writable);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(7);
+        expect(output[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+        expect(process.exitCode).toBe(0);
+      }, 2000, 'stream parquet file');
+    });
+
+    test('streams .parquet file -> JSONL output', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', parquetPath, '-f', 'jsonl'], undefined, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n').map(l => JSON.parse(l));
+        expect(lines).toHaveLength(7);
+        expect(lines[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+      }, 2000, 'stream parquet to JSONL');
     });
 
     test('pipe --input-format jsonl streams line-by-line', async () => {

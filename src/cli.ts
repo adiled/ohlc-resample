@@ -3,13 +3,16 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as readline from 'readline';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'node:url';
 import { program as commanderProgram } from 'commander';
-import { IOHLCV, OHLCV } from './types';
-import { resampleOhlcv, resampleOhlcvAsync } from './lib';
+import { IOHLCV, OHLCV } from './types.js';
+import { resampleOhlcv, resampleOhlcvAsync } from './lib.js';
 
 // Read version from package.json so there's a single source of truth.
 // `dist/cli.js` is one level deep; `../package.json` resolves to the
 // installed package's manifest both during dev and post-install.
+const require = createRequire(import.meta.url);
 const { version: PACKAGE_VERSION } = require('../package.json') as { version: string };
 
 type Shape = 'object' | 'array';
@@ -333,6 +336,23 @@ async function runStreaming(
 
   const iter = resampleOhlcvAsync(candleSource as AsyncIterable<OHLCV | IOHLCV>, { baseTimeframe: options.baseTimeframe, newTimeframe: options.newTimeframe });
 
+  await writeResampledStream(iter, options.format, options.shape, stdout, outputPath);
+  if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed input row(s)\n`);
+}
+
+/**
+ * Consume a resampler async generator and write each candle incrementally.
+ * Detects the input shape from the first value (tuples vs objects) unless an
+ * explicit output shape is requested. Shared by the line-based streaming path
+ * (CSV/JSONL) and the Parquet path.
+ */
+async function writeResampledStream(
+  iter: AsyncGenerator<OHLCV | IOHLCV>,
+  format: OutputFormat,
+  shapeOption: ShapeOption,
+  stdout: NodeJS.WritableStream,
+  outputPath?: string,
+): Promise<void> {
   let first: IteratorResult<OHLCV | IOHLCV>;
   try {
     first = await iter.next();
@@ -348,10 +368,10 @@ async function runStreaming(
   }
 
   const inputShape: Shape = Array.isArray(first.value) ? 'array' : 'object';
-  const outputShape: Shape = options.shape === 'auto' ? inputShape : options.shape;
+  const outputShape: Shape = shapeOption === 'auto' ? inputShape : shapeOption;
 
   const outStream = outputPath ? fs.createWriteStream(outputPath) : stdout;
-  const writer = new IncrementalWriter(options.format, outputShape, outStream);
+  const writer = new IncrementalWriter(format, outputShape, outStream);
 
   try {
     await writer.writeCandle(first.value);
@@ -362,7 +382,6 @@ async function runStreaming(
   } catch (err) {
     throw prefixError(err);
   }
-  if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed input row(s)\n`);
 }
 
 /**
@@ -450,8 +469,8 @@ export async function runCli(
     const input = options.input as string | undefined;
     if (input) {
       const ext = path.extname(input).slice(1).toLowerCase();
-      if (!['csv', 'json', 'jsonl', 'ndjson'].includes(ext)) {
-        throw new Error('Only CSV and JSON files are accepted as input');
+      if (!['csv', 'json', 'jsonl', 'ndjson', 'parquet'].includes(ext)) {
+        throw new Error('Only CSV, JSON, and Parquet files are accepted as input');
       }
       // Large-file streaming path: CSV / JSONL are read line-by-line and fed
       // through the async resampler, so memory never scales with file size.
@@ -473,6 +492,24 @@ export async function runCli(
           },
           stdout,
           stderr,
+          options.output,
+        );
+        return;
+      }
+      // Parquet files are read row-group-by-row-group through the async
+      // resampler (hyparquet), so memory is bounded by the largest row group.
+      if (ext === 'parquet') {
+        try {
+          await fs.promises.stat(path.resolve(input));
+        } catch (err) {
+          throw prefixError(err);
+        }
+        const iter = resampleOhlcvAsync(input, { baseTimeframe, newTimeframe });
+        await writeResampledStream(
+          iter,
+          outputFormat,
+          options.shape as ShapeOption,
+          stdout,
           options.output,
         );
         return;
@@ -516,7 +553,12 @@ export async function runCli(
   }
 }
 
-if (require.main === module) {
+// ESM equivalent of `require.main === module`: run the CLI only when this
+// file is executed directly (e.g. `node dist/cli.js`), never when imported.
+const isMain =
+  process.argv[1] &&
+  path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+if (isMain) {
   process.on('SIGINT', () => process.exit());
   process.on('SIGTERM', () => process.exit());
   runCli(process.argv);

@@ -1,13 +1,9 @@
-import type { IOHLCV, OHLCV, TradeTick, Trade } from './types';
-import { OHLCVField } from './types';
+import type { IOHLCV, OHLCV, TradeTick, Trade } from './types.js';
+import { OHLCVField } from './types.js';
 
-import sum from "lodash/sum";
-import max from "lodash/max";
-import min from "lodash/min";
-import isPlainObject from "lodash/isPlainObject";
-import groupBy from "lodash/groupBy";
-import sortBy from "lodash/sortBy";
-import chunk from "lodash/chunk";
+import _ from 'lodash';
+
+import { parquetOhlcvRowsAsync, parquetTicksAsync } from './parquet.js';
 
 /**
  * Resample OHLCV data to a coarser timeframe. The return type follows the
@@ -75,7 +71,7 @@ export function resampleOhlcv(
     throw new Error("input OHLCV data has no candles");
   }
 
-  if (isPlainObject(data[0])) {
+  if (_.isPlainObject(data[0])) {
     const arr = data as IOHLCV[];
     const candledata: OHLCV[] = arr.map(e => [e.time, e.open, e.high, e.low, e.close, e.volume]);
     const result = resampleOhlcvArray(candledata, baseTimeframe, newTimeframe);
@@ -168,8 +164,8 @@ export const resampleOhlcvArray = (
  * stream behaves like `resampleOhlcvStream`: buckets are emitted as soon as
  * the stream moves past them, which is exact for pre-sorted input.
  *
- * @param source AsyncIterable of OHLCV tuples or IOHLCV objects.
- * @param options.baseTimeframe Source timeframe in seconds (default 60).
+ * @param source AsyncIterable of OHLCV tuples/IOHLCV objects, or a string
+ *   Parquet file path (streamed row-group by row-group).
  * @param options.newTimeframe Target timeframe in seconds (default 300), must
  *   be a positive integer multiple of baseTimeframe.
  * @param options.outOfOrderMs Healing window in ms (default 0 = strictly sorted).
@@ -188,12 +184,20 @@ export function resampleOhlcvAsync(
   source: AsyncIterable<OHLCV | IOHLCV>,
   options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number }
 ): AsyncGenerator<OHLCV | IOHLCV>;
+export function resampleOhlcvAsync(
+  source: string,
+  options?: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number }
+): AsyncGenerator<OHLCV>;
 export async function* resampleOhlcvAsync(
-  source: AsyncIterable<OHLCV | IOHLCV>,
+  source: AsyncIterable<OHLCV | IOHLCV> | string,
   options: { baseTimeframe?: number; newTimeframe?: number; outOfOrderMs?: number } = {}
 ): AsyncGenerator<OHLCV | IOHLCV> {
 
   const { baseTimeframe = 60, newTimeframe = 300, outOfOrderMs = 0 } = options;
+  // A string is treated as a Parquet file path: rows are streamed one row
+  // group at a time, so memory stays bounded by the largest row group.
+  const input: AsyncIterable<OHLCV | IOHLCV> =
+    typeof source === 'string' ? parquetOhlcvRowsAsync(source) : source;
   if (!Number.isFinite(baseTimeframe) || baseTimeframe <= 0) {
     throw new Error("baseFrame must be a positive number");
   }
@@ -209,7 +213,7 @@ export async function* resampleOhlcvAsync(
   }
   const msFrame = newTimeframe * 1000;
 
-  const it = source[Symbol.asyncIterator]();
+  const it = input[Symbol.asyncIterator]();
   const first = await it.next();
   if (first.done) {
     throw new Error("input OHLCV data has no candles");
@@ -283,12 +287,12 @@ export const tickGroupToOhlcv = (
 ) => {
 
   const prices = ticks.map(tick => Number(tick.price));
-  const volume = sum(ticks.map(tick => Number(tick.quantity))) || 0;
+  const volume = _.sum(ticks.map(tick => Number(tick.quantity))) || 0;
   return {
     time,
     open: prices[0] || 0,
-    high: max(prices) || 0,
-    low: min(prices) || 0,
+    high: _.max(prices) || 0,
+    low: _.min(prices) || 0,
     close: prices[prices.length - 1] || 0,
     volume
   }
@@ -346,7 +350,7 @@ export const resampleTicksByTime = (
 
   timeframe *= Math.floor(1000);
   const data = Array.isArray(tickData) ? tickData : [...tickData];
-  const tickGroups = groupBy(data, (tick) => tick.time - (tick.time % timeframe));
+  const tickGroups = _.groupBy(data, (tick) => tick.time - (tick.time % timeframe));
   const candles: IOHLCV[] = [];
   Object.keys(tickGroups).forEach(timeOpen => {
     const ticks = tickGroups[timeOpen];
@@ -357,7 +361,7 @@ export const resampleTicksByTime = (
     }
     candles.push(candle);
   });
-  const sortedCandles = sortBy(candles, (candle) => candle.time);
+  const sortedCandles = _.sortBy(candles, (candle) => candle.time);
 
   if (includeLatestCandle === false) {
     sortedCandles.pop();
@@ -381,24 +385,36 @@ export const resampleTicksByTime = (
  * sort required. With `outOfOrderMs = 0` (default) the stream is exact for
  * pre-sorted input and emits each bucket as the stream passes it.
  *
- * @param source AsyncIterable of trade ticks.
+ * @param source AsyncIterable of trade ticks, or a string Parquet file path
+ *   of tick rows (streamed row-group by row-group).
  * @param options.timeframe Bucket size in seconds (default 60).
  * @param options.includeLatestCandle Emit the open (unfinished) last bucket (default true).
  * @param options.fillGaps Insert gap candles between buckets (default false).
  * @param options.outOfOrderMs Healing window in ms (default 0 = strictly sorted).
  */
-export async function* resampleTicksByTimeAsync(
+export function resampleTicksByTimeAsync(
   source: AsyncIterable<TradeTick>,
+  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number }
+): AsyncGenerator<IOHLCV>;
+export function resampleTicksByTimeAsync(
+  source: string,
+  options?: { timeframe?: number; includeLatestCandle?: boolean; fillGaps?: boolean; outOfOrderMs?: number }
+): AsyncGenerator<IOHLCV>;
+export async function* resampleTicksByTimeAsync(
+  source: AsyncIterable<TradeTick> | string,
   { timeframe = 60, includeLatestCandle = true, fillGaps = false, outOfOrderMs = 0 }:
     { timeframe?: number, includeLatestCandle?: boolean, fillGaps?: boolean, outOfOrderMs?: number } = {}
 ): AsyncGenerator<IOHLCV> {
 
+  // A string is treated as a Parquet file path of tick rows.
+  const input: AsyncIterable<TradeTick> =
+    typeof source === 'string' ? parquetTicksAsync(source) : source;
   const msFrame = timeframe * 1000;
   const buckets = new Map<number, TradeTick[]>();
   let maxTime = -Infinity;
   let lastEmitted: IOHLCV | null = null;
 
-  for await (const tick of source) {
+  for await (const tick of input) {
     const time = Number(tick.time);
     maxTime = Math.max(maxTime, time);
     const bucketTime = time - (time % msFrame);
@@ -454,7 +470,7 @@ export const resampleTicksByCount = (tickData: Iterable<Trade>,
   }
   const data = Array.isArray(tickData) ? tickData : [...tickData];
   const candles: IOHLCV[] = [];
-  const tickGroups = chunk(data, tickCount);
+  const tickGroups = _.chunk(data, tickCount);
   tickGroups.forEach(ticks => {
     candles.push(tickGroupToOhlcv(Number(ticks[ticks.length - 1].time), ticks));
   });
@@ -469,19 +485,31 @@ export const resampleTicksByCount = (tickData: Iterable<Trade>,
  * `lodash/chunk` and keeps the incomplete tail). Memory use is O(tickCount).
  * Order by count is inherently streaming-safe, so no healing window is needed.
  *
- * @param source AsyncIterable of trade ticks.
+ * @param source AsyncIterable of trade ticks, or a string Parquet file path
+ *   of tick rows (streamed row-group by row-group).
  * @param options.tickCount Ticks per candle (default 5).
  */
-export async function* resampleTicksByCountAsync(
+export function resampleTicksByCountAsync(
   source: AsyncIterable<TradeTick>,
+  options?: { tickCount?: number }
+): AsyncGenerator<IOHLCV>;
+export function resampleTicksByCountAsync(
+  source: string,
+  options?: { tickCount?: number }
+): AsyncGenerator<IOHLCV>;
+export async function* resampleTicksByCountAsync(
+  source: AsyncIterable<TradeTick> | string,
   { tickCount = 5 }: { tickCount?: number } = {}
 ): AsyncGenerator<IOHLCV> {
 
+  // A string is treated as a Parquet file path of tick rows.
+  const input: AsyncIterable<TradeTick> =
+    typeof source === 'string' ? parquetTicksAsync(source) : source;
   if (tickCount < 1) {
     throw new Error("Convert cannot be smaller than 1");
   }
   let group: TradeTick[] = [];
-  for await (const tick of source) {
+  for await (const tick of input) {
     group.push(tick);
     if (group.length === tickCount) {
       yield tickGroupToOhlcv(Number(group[group.length - 1].time), group);

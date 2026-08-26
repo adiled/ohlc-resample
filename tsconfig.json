@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "es2022",
     "lib": ["es2022"],
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "ignoreDeprecations": "6.0",
     "declaration": true,
     "sourceMap": true,

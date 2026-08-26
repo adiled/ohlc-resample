@@ -143,6 +143,46 @@ records that land inside the window are folded into the correct bucket on the
 fly — no global sort, and no re-reading already-emitted buckets. `outOfOrderMs
 = 0` (default) is exact for pre-sorted input and emits as the stream passes.
 
+### Parquet files
+
+The async variants also accept a **file path** to a Parquet file. Rows are
+streamed **row-group by row-group** (memory is bounded by the largest row
+group, not the file), so large columnar datasets don't blow up memory. This is
+the "foot in the door" before the future native engine — the reader is the
+pure-JS, zero-dependency `hyparquet` package.
+
+```typescript
+// resample a Parquet OHLCV file
+for await (const candle of resampleOhlcvAsync("data.parquet", {
+  baseTimeframe: 60,
+  newTimeframe: 300,
+})) {
+  // candle is an OHLCV tuple
+}
+
+// resample a Parquet tick file
+for await (const candle of resampleTicksByTimeAsync("ticks.parquet", {
+  timeframe: 60,
+})) {
+  // candle is an IOHLCV object
+}
+```
+
+Column names are matched **loosely by alias**, so `timestamp`/`ts`/`date`,
+`o`/`open`, `vol`/`volume`/`qty`/`quantity`, and friends all work. Timestamps
+in any unit (ms / µs / ns / days) are converted to epoch-milliseconds. If a
+required column (`time`, `open`, `high`, `low`, `close`) is missing, the call
+throws; `volume` is optional and defaults to `0`. Parquet (file) input is
+supported **only on the async variants** — the sync functions stay array/
+iterable-only.
+
+## Module format
+
+`ohlc-resample` is **ESM-only** (`"type": "module"`). Use `import`, not
+`require`. The Parquet reader is ESM-native (`hyparquet` has no CommonJS build),
+so keeping the package ESM keeps the dependency graph simple and future
+Rust/C++ native modules slot in cleanly.
+
 ## Types
 
 ```typescript
@@ -267,7 +307,7 @@ ohlc-resample -i input.csv -o output.json -f json
 ```bash
 Options:
   -V, --version                  Show version number
-  -i, --input <path>             Input file path (csv, json) or use pipe
+  -i, --input <path>             Input file path (csv, json, jsonl, parquet) or use pipe
   -o, --output <path>            Output file path (csv, json) or use stdout
   -f, --format <fmt>             Output format (csv, json, jsonl) (default: "json")
       --input-format <fmt>       Input format when piping (csv, json, jsonl, auto) (default: "auto")
@@ -296,12 +336,16 @@ Input shape is auto-detected. Output shape mirrors input by default; override wi
 `.csv`, `.jsonl`, and `.ndjson` **files are read line-by-line and fed through
 the async streaming resampler**, so memory never scales with file size (a
 JSON array file is the exception: the whole document must be parsed to know
-where the array ends, so it stays buffer-based). Output is written
+where the array ends, so it stays buffer-based). `.parquet` **files are read
+row-group by row-group** through the same async resampler. Output is written
 incrementally in CSV, JSON (a valid, parseable array), or JSONL.
 
 ```bash
 # Stream a 100MB CSV to JSONL candles
 ohlc-resample -i huge.csv -f jsonl -o candles.jsonl
+
+# Resample a Parquet OHLCV file (row-group streaming)
+ohlc-resample -i data.parquet -f json -o candles.json
 
 # Pipe JSONL line-by-line (no buffering)
 cat data.jsonl | ohlc-resample --input-format jsonl -f jsonl
