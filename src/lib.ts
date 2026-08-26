@@ -1,8 +1,6 @@
 import type { IOHLCV, OHLCV, TradeTick, Trade } from './types.js';
 import { OHLCVField } from './types.js';
 
-import _ from 'lodash';
-
 import { parquetOhlcvRowsAsync, parquetTicksAsync } from './parquet.js';
 import { mapOhlcvIterable, mapTickIterable } from './map.js';
 import type { OhlcvMap, TickMap } from './map.js';
@@ -73,7 +71,8 @@ export function resampleOhlcv(
     throw new Error("input OHLCV data has no candles");
   }
 
-  if (_.isPlainObject(data[0])) {
+  // Object-shaped input? (first element is a plain object, not a tuple).
+  if (!Array.isArray(data[0]) && typeof data[0] === 'object' && data[0] !== null) {
     const arr = data as IOHLCV[];
     const candledata: OHLCV[] = arr.map(e => [e.time, e.open, e.high, e.low, e.close, e.volume]);
     const result = resampleOhlcvArray(candledata, baseTimeframe, newTimeframe);
@@ -293,12 +292,20 @@ export const tickGroupToOhlcv = (
 ) => {
 
   const prices = ticks.map(tick => Number(tick.price));
-  const volume = _.sum(ticks.map(tick => Number(tick.quantity))) || 0;
+  let volume = 0;
+  let max = -Infinity;
+  let min = Infinity;
+  for (let i = 0; i < prices.length; i++) {
+    volume += Number(ticks[i].quantity);
+    const p = prices[i];
+    if (p > max) max = p;
+    if (p < min) min = p;
+  }
   return {
     time,
     open: prices[0] || 0,
-    high: _.max(prices) || 0,
-    low: _.min(prices) || 0,
+    high: max || 0,
+    low: min || 0,
     close: prices[prices.length - 1] || 0,
     volume
   }
@@ -356,7 +363,13 @@ export const resampleTicksByTime = (
 
   timeframe *= Math.floor(1000);
   const data = Array.isArray(tickData) ? tickData : [...tickData];
-  const tickGroups = _.groupBy(data, (tick) => tick.time - (tick.time % timeframe));
+  // Group ticks by wall-clock bucket, preserving insertion order (a plain
+  // object keyed by bucket string is stable and matches the old groupBy).
+  const tickGroups: Record<string, TradeTick[]> = {};
+  for (const tick of data) {
+    const key = String(tick.time - (tick.time % timeframe));
+    (tickGroups[key] ||= []).push(tick);
+  }
   const candles: IOHLCV[] = [];
   Object.keys(tickGroups).forEach(timeOpen => {
     const ticks = tickGroups[timeOpen];
@@ -367,7 +380,8 @@ export const resampleTicksByTime = (
     }
     candles.push(candle);
   });
-  const sortedCandles = _.sortBy(candles, (candle) => candle.time);
+  // Stable ascending sort (Array.prototype.sort is stable in Node >= 12).
+  const sortedCandles = [...candles].sort((a, b) => a.time - b.time);
 
   if (includeLatestCandle === false) {
     sortedCandles.pop();
@@ -478,10 +492,12 @@ export const resampleTicksByCount = (tickData: Iterable<Trade>,
   }
   const data = Array.isArray(tickData) ? tickData : [...tickData];
   const candles: IOHLCV[] = [];
-  const tickGroups = _.chunk(data, tickCount);
-  tickGroups.forEach(ticks => {
+  // Chunk into groups of tickCount, keeping the incomplete trailing tail
+  // (matches the legacy chunk behavior resampleTicksByCount relied on).
+  for (let i = 0; i < data.length; i += tickCount) {
+    const ticks = data.slice(i, i + tickCount);
     candles.push(tickGroupToOhlcv(Number(ticks[ticks.length - 1].time), ticks));
-  });
+  }
   return candles;
 }
 
@@ -490,7 +506,7 @@ export const resampleTicksByCount = (tickData: Iterable<Trade>,
  * `AsyncIterable` and returns an async generator. Each complete group of
  * `tickCount` ticks is yielded as soon as it fills; a partial trailing group
  * is emitted at the end, matching `resampleTicksByCount` (which uses
- * `lodash/chunk` and keeps the incomplete tail). Memory use is O(tickCount).
+ * `chunk` behavior and keeps the incomplete tail). Memory use is O(tickCount).
  * Order by count is inherently streaming-safe, so no healing window is needed.
  *
  * @param source AsyncIterable of trade ticks, or a string Parquet file path

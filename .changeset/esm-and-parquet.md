@@ -55,3 +55,8 @@ the door" before the future native engine).
   incrementally. Unsupported-extension error now names Parquet.
 - Added a zero-dependency pure-JS Parquet reader (`hyparquet`) as a runtime
   dependency.
+- **Removed the `lodash` dependency** (~315 kB). The seven helpers it
+  provided (`isPlainObject`, `sum`, `max`, `min`, `groupBy`, `sortBy`,
+  `chunk`) are now implemented natively inline, so the package installs only
+  what it actually builds — runtime deps are now just `commander` and
+  `hyparquet`.
