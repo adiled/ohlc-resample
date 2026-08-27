@@ -6,6 +6,7 @@ import { Readable, Writable } from 'stream';
 import { IOHLCV, OHLCV } from '../src/types';
 import { withTimeout } from './utils';
 import { runCli, parseCSV, detectFormat } from '../src/cli';
+import { resampleOhlcv } from '../src';
 
 describe('CLI', () => {
   let tempDir: string;
@@ -113,7 +114,7 @@ describe('CLI', () => {
         const out = captureWritable();
         const err = captureWritable();
         await runCli(['node', 'cli.js', '-i', invalidFile], undefined, out.writable, err.writable);
-        expect(err.getData()).toContain('Only CSV and JSON files are accepted');
+        expect(err.getData()).toContain('Only CSV, JSON, and Parquet files are accepted');
         expect(process.exitCode).toBe(1);
       }, 1000, 'reject invalid extension');
     });
@@ -252,8 +253,17 @@ describe('CLI', () => {
       }, 1000, 'invalid CSV');
     });
 
-    test('non-numeric timeframe → exit 1', async () => {
+    test('unknown option → exit 1 + clean error', async () => {
       await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '--bogus', 'x'], undefined, out.writable, err.writable);
+        expect(err.getData()).toContain('unknown option: --bogus');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'unknown option');
+    });
+
+    test('non-numeric timeframe → exit 1', async () => {      await withTimeout(async () => {
         const out = captureWritable();
         const err = captureWritable();
         await runCli(['node', 'cli.js', '-i', csvPath, '-b', 'invalid', '-n', '300'], undefined, out.writable, err.writable);
@@ -296,6 +306,219 @@ describe('CLI', () => {
           time: 1609459200000, open: 100, high: 107, low: 95, close: 106, volume: 2200,
         });
       }, 1000, 'custom tf');
+    });
+  });
+
+  describe('Streaming (CSV/JSONL large-file path)', () => {
+    test('streams CSV file -> JSON array output == buffered result', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath], undefined, out.writable, err.writable);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+        expect(process.exitCode).toBe(0);
+      }, 1000, 'stream CSV file');
+    });
+
+    test('streams CSV file -> JSONL output', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-f', 'jsonl'], undefined, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n').map(l => JSON.parse(l));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatchObject(expectedCandle);
+      }, 1000, 'stream CSV to JSONL');
+    });
+
+    test('streams JSONL file input', async () => {
+      await withTimeout(async () => {
+        const jsonlPath = path.join(tempDir, 'test.jsonl');
+        await fs.promises.writeFile(
+          jsonlPath,
+          testData.map(d => JSON.stringify(d)).join('\n') + '\n',
+        );
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', jsonlPath], undefined, out.writable, err.writable);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'stream JSONL file');
+    });
+
+    test('streams NDJSON extension input -> JSONL output', async () => {
+      await withTimeout(async () => {
+        const ndPath = path.join(tempDir, 'test.ndjson');
+        await fs.promises.writeFile(ndPath, testData.map(d => JSON.stringify(d)).join('\n') + '\n');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', ndPath, '-f', 'jsonl'], undefined, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n').map(l => JSON.parse(l));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatchObject(expectedCandle);
+      }, 1000, 'stream NDJSON');
+    });
+
+    test('streaming large CSV == buffered result (parity on 2k rows)', async () => {
+      await withTimeout(async () => {
+        const big = Array.from({ length: 2000 }, (_, i) => ({
+          time: 1609459200000 + i * 60000,
+          open: 100 + (i % 50),
+          high: 108 + (i % 20),
+          low: 95 + (i % 10),
+          close: 103 + (i % 30),
+          volume: 500,
+        }));
+        const bigCsv = path.join(tempDir, 'big.csv');
+        await fs.promises.writeFile(
+          bigCsv,
+          'time,open,high,low,close,volume\n' + big.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n'),
+        );
+        const expected = resampleOhlcv(big, { baseTimeframe: 60, newTimeframe: 300 });
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', bigCsv], undefined, out.writable, err.writable);
+        const output = JSON.parse(out.getData());
+        expect(output).toEqual(expected);
+      }, 2000, 'large CSV parity');
+    });
+
+    test('streaming CSV with malformed rows warns and skips', async () => {
+      await withTimeout(async () => {
+        const badCsv = path.join(tempDir, 'bad.csv');
+        await fs.promises.writeFile(badCsv, 'time,open,high,low,close,volume\n1,2,3,4,5\n1609459200000,100,105,95,102,1000');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', badCsv], undefined, out.writable, err.writable);
+        expect(err.getData()).toContain('skipped 1');
+        expect(JSON.parse(out.getData())).toHaveLength(1);
+      }, 1000, 'stream bad CSV');
+    });
+
+    test('streams .parquet file -> JSON array output (tuples)', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', parquetPath], undefined, out.writable, err.writable);
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(7);
+        expect(output[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+        expect(process.exitCode).toBe(0);
+      }, 2000, 'stream parquet file');
+    });
+
+    test('streams .parquet file -> JSONL output', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', parquetPath, '-f', 'jsonl'], undefined, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n').map(l => JSON.parse(l));
+        expect(lines).toHaveLength(7);
+        expect(lines[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+      }, 2000, 'stream parquet to JSONL');
+    });
+
+    test('pipe --input-format jsonl streams line-by-line', async () => {
+      await withTimeout(async () => {
+        const stdin = Readable.from([testData.map(d => JSON.stringify(d)).join('\n') + '\n']);
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '--input-format', 'jsonl', '-f', 'jsonl'], stdin, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n').map(l => JSON.parse(l));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatchObject(expectedCandle);
+      }, 1000, 'pipe jsonl');
+    });
+  });
+
+  describe('--map option', () => {
+    test('maps CSV header keys (timestamp/amount) via --map', async () => {
+      await withTimeout(async () => {
+        const mappedCsv = path.join(tempDir, 'mapped.csv');
+        await fs.promises.writeFile(
+          mappedCsv,
+          'timestamp,open,high,low,close,amount\n' +
+          testData.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n'),
+        );
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', mappedCsv, '--map', 'time=timestamp,volume=amount'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+        expect(process.exitCode).toBe(0);
+      }, 1000, 'map CSV header');
+    });
+
+    test('maps JSON object keys (timestamp/o/h/l/c/vol) via --map', async () => {
+      await withTimeout(async () => {
+        const mappedJson = path.join(tempDir, 'mapped.json');
+        const rows = testData.map(d => ({
+          timestamp: d.time, o: d.open, h: d.high, l: d.low, c: d.close, vol: d.volume,
+        }));
+        await fs.promises.writeFile(mappedJson, JSON.stringify(rows, null, 2));
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', mappedJson, '--map', 'time=timestamp,open=o,high=h,low=l,close=c,volume=vol'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'map JSON object');
+    });
+
+    test('maps .parquet arbitrary column names via --map', async () => {
+      await withTimeout(async () => {
+        const parquetPath = path.join(import.meta.dirname, 'fixtures', 'ohlcv_custom.parquet');
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '-i', parquetPath, '--map', 'time=mytime,open=myopen,high=myhigh,low=mylow,close=myclose,volume=myvol'],
+          undefined, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(7);
+        expect(output[0]).toEqual([1589177400000, 8695.81, 8700, 8687.9, 8695.01, 62.184704]);
+        expect(process.exitCode).toBe(0);
+      }, 2000, 'map parquet custom');
+    });
+
+    test('maps piped CSV via --map (buffer path)', async () => {
+      await withTimeout(async () => {
+        const csvContent =
+          'timestamp,open,high,low,close,amount\n' +
+          testData.map(d => `${d.time},${d.open},${d.high},${d.low},${d.close},${d.volume}`).join('\n');
+        const stdin = readableFromString(csvContent);
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(
+          ['node', 'cli.js', '--map', 'time=timestamp,volume=amount'],
+          stdin, out.writable, err.writable,
+        );
+        const output = JSON.parse(out.getData());
+        expect(output).toHaveLength(1);
+        expect(output[0]).toMatchObject(expectedCandle);
+      }, 1000, 'map pipe CSV');
+    });
+
+    test('rejects unknown --map field', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '--map', 'foo=bar'], undefined, out.writable, err.writable);
+        expect(err.getData()).toContain('Unknown --map field "foo"');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'invalid map field');
     });
   });
 

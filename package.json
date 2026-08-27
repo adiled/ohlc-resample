@@ -2,18 +2,27 @@
   "name": "ohlc-resample",
   "version": "1.2.1",
   "description": "Resample (inter-convert) trade, ticks or OHLCV data to different time frames, includes CLI",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "engines": {
     "node": ">=26"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.js.map"
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build": "tsc --build",
-    "build:check": "node -e \"require('./dist')\"",
+    "build": "tsc --build && node scripts/make-cjs-wrapper.mjs",
+    "build:check": "node -e \"import('./dist/index.js')\" && node -e \"const m=require('./dist/index.cjs');m.resampleOhlcv([{time:1609459200000,open:100,high:105,low:95,close:102,volume:500}],{baseTimeframe:60,newTimeframe:300})\"",
     "prepublishOnly": "npm test && npm run build && npm run build:check",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -49,7 +58,6 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
-    "@types/lodash": "^4.17.24",
     "@types/node": "^25.6.2",
     "@vitest/coverage-v8": "^4.1.5",
     "rimraf": "^6.1.3",
@@ -57,7 +65,7 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
-    "commander": "^14.0.3",
-    "lodash": "^4.18.1"
+    "hyparquet": "^1.29.1",
+    "mri": "^1.2.0"
   }
 }

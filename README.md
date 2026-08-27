@@ -91,6 +91,150 @@ resampleTicksByTime(tickData as TradeTick[], {
 resampleTicksByCount(tickData as TradeTick[], { tickCount: 5 }); // return IOHLCV[]
 ```
 
+## Streaming & large data
+
+The three functions above all accept a **sync iterable / generator** as well as
+an array (materialized internally), and `resampleOhlcv` also accepts a binary
+`Float64Array` of interleaved `[time, open, high, low, close, volume]` records.
+
+For **true streaming** — large files, live feeds, or anything you don't want to
+hold in memory — use the async variants. They consume an `AsyncIterable` (a
+Node `ReadableStream`, an async generator, `for await` sources) and return an
+`AsyncGenerator` that emits each bucket as soon as it is safe. Memory use is
+bounded by the active bucket window, never the whole input.
+
+```typescript
+import {
+  resampleOhlcvAsync,
+  resampleTicksByTimeAsync,
+  resampleTicksByCountAsync,
+} from "ohlc-resample";
+
+// Stream OHLCV candles, one bucket at a time
+for await (const candle of resampleOhlcvAsync(readableStream, {
+  baseTimeframe: 60,
+  newTimeframe: 300,
+})) {
+  // candle is a completed OHLCV bucket
+}
+
+// Stream ticks into time buckets
+for await (const candle of resampleTicksByTimeAsync(tickSource, {
+  timeframe: 60,
+  includeLatestCandle: false,
+  fillGaps: true,
+})) {
+  // ...
+}
+
+// Stream ticks into count buckets (O(tickCount) memory)
+for await (const candle of resampleTicksByCountAsync(tickSource, { tickCount: 5 })) {
+  // ...
+}
+```
+
+**Sorted input.** The array API sorts a copy for you; a streaming API cannot
+buffer to sort, so pass data **ascending by time** unless you use the healing
+window below.
+
+**Out-of-order healing.** With `outOfOrderMs > 0`, the stream keeps each bucket
+open for that many milliseconds of wall-clock time, so delayed or out-of-order
+records that land inside the window are folded into the correct bucket on the
+fly — no global sort, and no re-reading already-emitted buckets. `outOfOrderMs
+= 0` (default) is exact for pre-sorted input and emits as the stream passes.
+
+### Parquet files
+
+The async variants also accept a **file path** to a Parquet file. Rows are
+streamed **row-group by row-group** (memory is bounded by the largest row
+group, not the file), so large columnar datasets don't blow up memory. This is
+the "foot in the door" before the future native engine — the reader is the
+pure-JS, zero-dependency `hyparquet` package.
+
+```typescript
+// resample a Parquet OHLCV file
+for await (const candle of resampleOhlcvAsync("data.parquet", {
+  baseTimeframe: 60,
+  newTimeframe: 300,
+})) {
+  // candle is an OHLCV tuple
+}
+
+// resample a Parquet tick file
+for await (const candle of resampleTicksByTimeAsync("ticks.parquet", {
+  timeframe: 60,
+})) {
+  // candle is an IOHLCV object
+}
+```
+
+Column names are read by **exact canonical name** (`time`, `open`, `high`,
+`low`, `close`, `volume`, and `time`/`price`/`quantity` for ticks). Timestamps
+in any unit (ms / µs / ns / days) are converted to epoch-milliseconds. If a
+required column is missing, the call throws; OHLCV `volume` is optional and
+defaults to `0`. Any other column layout must be supplied with the `map`
+option below. Parquet (file) input is supported **only on the async variants**
+— the sync functions stay array/iterable-only.
+
+### Per-record `map` option
+
+The async variants take a `map` option that translates **each input record**
+into canonical OHLCV. It works uniformly across any named-schema input —
+Parquet rows, CSV header rows, JSON objects — and is how you adapt foreign
+schemas (CCXT's `timestamp`/`amount`, arbitrary Parquet columns, etc.) instead
+of relying on name guessing. Two shapes are accepted:
+
+1. **Record form** — keys are canonical IOHLCV fields, values are the keys to
+   read from each input record. Fields absent from the map use the canonical
+   key directly:
+
+   ```typescript
+   // read `time` from `timestamp`, `volume` from `amount`; the rest stay canonical
+   for await (const candle of resampleOhlcvAsync(readableStream, {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: { time: 'timestamp', volume: 'amount' },
+   })) { }
+
+   // arbitrary Parquet columns
+   for await (const candle of resampleOhlcvAsync('data.parquet', {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: { time: 'mytime', open: 'myopen', high: 'myhigh', low: 'mylow', close: 'myclose', volume: 'myvol' },
+   })) { }
+   ```
+
+2. **Function form** — a full transform `(record) => IOHLCV` for complete
+   control:
+
+   ```typescript
+   for await (const candle of resampleOhlcvAsync(readableStream, {
+     baseTimeframe: 60,
+     newTimeframe: 300,
+     map: (r) => ({
+       time: r.timestamp, open: r.open, high: r.high,
+       low: r.low, close: r.close, volume: r.amount,
+     }),
+   })) { }
+   ```
+
+Ticks accept the same shapes over `time`/`price`/`quantity` (e.g. `map:
+{ time: 'timestamp', quantity: 'amount' }`). Positional inputs — `OHLCV`
+tuples and `Float64Array` — have no keys to map and are unaffected. The sync
+functions take canonical arrays, so `map` is only relevant to the async
+variants (file paths and record-shaped streams).
+
+## Module format
+
+`ohlc-resample` is **ESM-first with a CommonJS wrapper** (`"type": "module"`).
+Use `import` for the full API. `require('ohlc-resample')` also works: the build
+emits `dist/index.cjs`, a one-line re-export that loads the ESM build via
+Node's synchronous `require(esm)` (stable since 23.7), so both entry points
+resolve to the **same module instance** — there's no dual-package hazard and
+no CommonJS build to maintain. The Parquet reader is ESM-native
+(`hyparquet` has no CommonJS build), which is why the package is ESM-first; a
+thin wrapper keeps `require()` consumers working.
+
 ## Types
 
 ```typescript
@@ -215,13 +359,14 @@ ohlc-resample -i input.csv -o output.json -f json
 ```bash
 Options:
   -V, --version                  Show version number
-  -i, --input <path>             Input file path (csv, json) or use pipe
+  -i, --input <path>             Input file path (csv, json, jsonl, parquet) or use pipe
   -o, --output <path>            Output file path (csv, json) or use stdout
-  -f, --format <fmt>             Output format (csv, json) (default: "json")
-      --input-format <fmt>       Input format when piping (csv, json, auto) (default: "auto")
+  -f, --format <fmt>             Output format (csv, json, jsonl) (default: "json")
+      --input-format <fmt>       Input format when piping (csv, json, jsonl, auto) (default: "auto")
   -s, --shape <shape>            Output shape for JSON: object, array, auto (default: "auto")
   -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
+      --map <mapping>            Map record fields to canonical keys (e.g. time=timestamp,volume=amount)
   -h, --help                     Display help for command
 ```
 
@@ -239,9 +384,49 @@ The CLI accepts and emits two equivalent JSON shapes:
 
 Input shape is auto-detected. Output shape mirrors input by default; override with `-s array` or `-s object`. CSV input is always parsed as object-shape; CSV output is always rows.
 
+### Large files
+
+`.csv`, `.jsonl`, and `.ndjson` **files are read line-by-line and fed through
+the async streaming resampler**, so memory never scales with file size (a
+JSON array file is the exception: the whole document must be parsed to know
+where the array ends, so it stays buffer-based). `.parquet` **files are read
+row-group by row-group** through the same async resampler. Output is written
+incrementally in CSV, JSON (a valid, parseable array), or JSONL.
+
+```bash
+# Stream a 100MB CSV to JSONL candles
+ohlc-resample -i huge.csv -f jsonl -o candles.jsonl
+
+# Resample a Parquet OHLCV file (row-group streaming)
+ohlc-resample -i data.parquet -f json -o candles.json
+
+# Pipe JSONL line-by-line (no buffering)
+cat data.jsonl | ohlc-resample --input-format jsonl -f jsonl
+```
+
 ### Input Formats
 
-The CLI supports both CSV and JSON input formats:
+The CLI supports CSV, JSON, and JSONL input formats:
+
+#### Mapping non-canonical fields (`--map`)
+
+When your input uses different field names (CCXT-style `timestamp`/`amount`, a
+CSV header in a foreign order, arbitrary Parquet columns), pass `--map` with
+`field=sourceKey` entries separated by commas. It applies to CSV headers,
+JSON object keys, and Parquet columns; tuple (array) records have no keys and
+are unaffected. With `--map`, a CSV's first line is always treated as the
+header.
+
+```bash
+# CCXT-style JSON objects: timestamp + amount
+ohlc-resample -i data.json --map time=timestamp,volume=amount
+
+# Foreign CSV header
+ohlc-resample -i data.csv --map time=timestamp,volume=amount
+
+# Arbitrary Parquet columns
+ohlc-resample -i data.parquet --map time=mytime,open=myopen,high=myhigh,low=mylow,close=myclose,volume=myvol
+```
 
 #### CSV Format
 ```csv
@@ -262,6 +447,12 @@ time,open,high,low,close,volume
     "volume": 1000
   }
 ]
+```
+
+#### JSONL Format (one candle per line)
+```json
+{"time":1609459200000,"open":100,"high":105,"low":95,"close":102,"volume":1000}
+{"time":1609459260000,"open":102,"high":107,"low":101,"close":106,"volume":1200}
 ```
 
 ### Pipe Input
