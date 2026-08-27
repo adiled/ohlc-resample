@@ -361,8 +361,8 @@ cat data.csv | ohlc --input-format csv
 
 ## MCP server (AI agents)
 
-`ohlc-resample` ships a bundled, **zero-dependency MCP server** — the
-`ohlc-resample-mcp` binary — so AI agents (Claude, etc.) can resample candles
+`ohlc-resample` ships a bundled, **zero-dependency MCP server** (the
+`ohlc-resample-mcp` binary), so AI agents (Claude, etc.) can resample candles
 by intent. It is a thin adapter over the CLI itself: each tool call runs the
 `ohlc` engine in-process and inherits every CLI feature (formats, streaming,
 Parquet, `--map`) with zero extra maintenance.
@@ -380,8 +380,8 @@ Install the package and point your MCP client at the binary:
 }
 ```
 
-It exposes one tool, **`resample_ohlcv_file`**, which is **file-path-based** —
-the LLM pays tokens for intent, not data:
+It exposes one tool, **`resample_ohlcv_file`**, which is **file-path-based**:
+the LLM pays tokens for intent, not data.
 
 - `input_path` (required): csv, json, jsonl, ndjson, or parquet file.
 - `base_timeframe` (default `60`), `new_timeframe` (default `300`, integer
