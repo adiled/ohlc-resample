@@ -22,6 +22,7 @@
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc --build && node scripts/make-cjs-wrapper.mjs",
+    "mcp": "node dist/mcp.js",
     "build:check": "node -e \"import('./dist/index.js')\" && node -e \"const m=require('./dist/index.cjs');m.resampleOhlcv([{time:1609459200000,open:100,high:105,low:95,close:102,volume:500}],{baseTimeframe:60,newTimeframe:300})\"",
     "prepublishOnly": "npm test && npm run build && npm run build:check",
     "test": "vitest run",
@@ -31,7 +32,8 @@
     "release": "npm publish --no-git-checks --access public --provenance"
   },
   "bin": {
-    "ohlc-resample": "./dist/cli.js"
+    "ohlc-resample": "./dist/cli.js",
+    "ohlc-resample-mcp": "./dist/mcp.js"
   },
   "keywords": [
     "ohlc",

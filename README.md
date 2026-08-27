@@ -1,6 +1,6 @@
 <h1 align="center">ohlc-resample 🕯️</h1>
 <p align="center">
-Turn trade, tick, or OHLCV data into clean candlestick charts on any time frame
+Transform, resample, and stream market data at any scale
 </p>
 <p align="center">
   <a href="https://www.npmjs.com/package/ohlc-resample" target="_blank">
@@ -358,6 +358,44 @@ file-only via `-i`).
 cat data.json | ohlc
 cat data.csv | ohlc --input-format csv
 ```
+
+## MCP server (AI agents)
+
+`ohlc-resample` ships a bundled, **zero-dependency MCP server** — the
+`ohlc-resample-mcp` binary — so AI agents (Claude, etc.) can resample candles
+by intent. It is a thin adapter over the CLI itself: each tool call runs the
+`ohlc` engine in-process and inherits every CLI feature (formats, streaming,
+Parquet, `--map`) with zero extra maintenance.
+
+Install the package and point your MCP client at the binary:
+
+```json
+{
+  "mcpServers": {
+    "ohlc-resample": {
+      "command": "ohlc-resample-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+It exposes one tool, **`resample_ohlcv_file`**, which is **file-path-based** —
+the LLM pays tokens for intent, not data:
+
+- `input_path` (required): csv, json, jsonl, ndjson, or parquet file.
+- `base_timeframe` (default `60`), `new_timeframe` (default `300`, integer
+  multiple of base).
+- `format` (`json`/`csv`/`jsonl`, default `json`), `shape` (`auto`/`object`/
+  `array`, default `auto`), `map` (e.g. `time=timestamp,volume=amount`).
+- `output_path`: optional output file; if omitted, the resampled output is
+  returned as text.
+
+Example call: `resample_ohlcv_file(input_path: "data.csv", base_timeframe: 60,
+new_timeframe: 300, format: "json", output_path: "out.json")`.
+
+The protocol is plain JSON-RPC 2.0 over stdio (initialize, `tools/list`,
+`tools/call`) with no `@modelcontextprotocol/sdk` dependency.
 
 ## Contributors
 
