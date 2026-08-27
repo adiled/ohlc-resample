@@ -351,7 +351,8 @@ cat data.jsonl | ohlc --input-format jsonl -f jsonl
 ### Pipe input
 
 Pipe data from other commands; the format is detected automatically, or force
-it with `--input-format`. Supported pipe input is JSON or CSV.
+it with `--input-format`. Supported pipe input is JSON or CSV (Parquet is
+file-only via `-i`).
 
 ```bash
 cat data.json | ohlc
