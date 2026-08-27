@@ -93,9 +93,11 @@ See the [CLI section](#cli) below for all options.
 - **Trade / tick JSON objects** `[{ time, price, quantity }, ...]`
 - **CSV**, **JSON**, and **JSONL** files
 - **Parquet** files
+- **Arbitrary schemas**, when you supply a `map` to the canonical OHLCV fields (for example CCXT's `timestamp` / `amount`, or any foreign column names)
 
 Input times are epoch **milliseconds**. See the [Types](#types) section for
-the exact shapes.
+the exact shapes, and the [map option](#renaming-fields-with-map) section for
+adapting arbitrary inputs.
 
 ## Library usage
 
