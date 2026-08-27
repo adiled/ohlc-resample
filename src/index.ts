@@ -1,6 +1,7 @@
-import * as lib from './lib';
-export * from './lib';
-export * from './types';
+import * as lib from './lib.js';
+export * from './lib.js';
+export * from './types.js';
+export * from './map.js';
 
 /**
  * Legacy aliased export, kept for backward compatibility with 1.x consumers.
