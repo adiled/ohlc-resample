@@ -58,5 +58,9 @@ the door" before the future native engine).
 - **Removed the `lodash` dependency** (~315 kB). The seven helpers it
   provided (`isPlainObject`, `sum`, `max`, `min`, `groupBy`, `sortBy`,
   `chunk`) are now implemented natively inline, so the package installs only
-  what it actually builds — runtime deps are now just `commander` and
-  `hyparquet`.
+  what it actually builds — runtime deps are now just `mri` and `hyparquet`.
+- **Replaced `commander` (~53 kB) with `mri` (~4 kB, zero deps)** for CLI
+  arg parsing. Because `mri` is silent about unknown flags and positional
+  args, the CLI now validates them against a fixed known set; help/version
+  are handled directly. `mri` mutates its config objects in place, so each
+  call builds fresh alias/default maps to stay correct across invocations.

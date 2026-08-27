@@ -253,8 +253,17 @@ describe('CLI', () => {
       }, 1000, 'invalid CSV');
     });
 
-    test('non-numeric timeframe → exit 1', async () => {
+    test('unknown option → exit 1 + clean error', async () => {
       await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '--bogus', 'x'], undefined, out.writable, err.writable);
+        expect(err.getData()).toContain('unknown option: --bogus');
+        expect(process.exitCode).toBe(1);
+      }, 1000, 'unknown option');
+    });
+
+    test('non-numeric timeframe → exit 1', async () => {      await withTimeout(async () => {
         const out = captureWritable();
         const err = captureWritable();
         await runCli(['node', 'cli.js', '-i', csvPath, '-b', 'invalid', '-n', '300'], undefined, out.writable, err.writable);

@@ -5,8 +5,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'node:url';
-import { program as commanderProgram } from 'commander';
-import { IOHLCV, OHLCV } from './types.js';
+import mri from 'mri';import { IOHLCV, OHLCV } from './types.js';
 import { resampleOhlcv, resampleOhlcvAsync } from './lib.js';
 import { mapToOhlcv } from './map.js';
 import type { OhlcvFieldMap, OhlcvMap } from './map.js';
@@ -461,6 +460,65 @@ function parseMapFlag(value: string | undefined): OhlcvMap | undefined {
   return map;
 }
 
+const KNOWN_FLAGS = new Set([
+  'input', 'i', 'output', 'o', 'format', 'f', 'input-format',
+  'shape', 's', 'base-timeframe', 'b', 'new-timeframe', 'n',
+  'map', 'help', 'h', 'version', 'V',
+]);
+
+const HELP = `Usage: ohlc-resample [options]
+
+Resample OHLCV between timeframes and file formats
+
+Options:
+  -V, --version                output the version number
+  -i, --input <path>           Input file path (csv, json, jsonl, parquet) or use pipe
+  -o, --output <path>          Output file path (csv, json, jsonl) or use stdout
+  -f, --format <fmt>           Output format (csv, json, jsonl) (default: "json")
+      --input-format <fmt>     Input format when piping (csv, json, jsonl, auto) (default: "auto")
+  -s, --shape <shape>          Output shape for JSON (object, array, auto) (default: "auto")
+  -b, --base-timeframe <number> Base timeframe in seconds (default: "60")
+  -n, --new-timeframe <number> New timeframe in seconds (default: "300")
+      --map <mapping>          Map record fields to canonical keys (e.g. time=timestamp,close=cl,volume=vol)
+  -h, --help                   display help for command\n`;
+
+// Tiny arg parser (mri). Unlike commander, mri is silent about unknown
+// flags and positional args, so we detect those ourselves against a fixed
+// known set. All values are kept as strings so `parseInt`/validation below
+// behaves exactly as before.
+//
+// NOTE: mri **mutates the config objects passed to it** (alias/default maps
+// get consumed and reverse-mapped in place), so every config must be built
+// fresh per call — never share module-level constants.
+function parseArgs(argv: string[]) {
+  const flags = mri(argv.slice(2), {
+    alias: {
+      i: 'input', o: 'output', f: 'format', s: 'shape',
+      b: 'base-timeframe', n: 'new-timeframe', h: 'help', V: 'version',
+    },
+    default: {
+      format: 'json',
+      'input-format': 'auto',
+      shape: 'auto',
+      'base-timeframe': '60',
+      'new-timeframe': '300',
+    },
+    string: [
+      'input', 'output', 'format', 'input-format', 'shape',
+      'base-timeframe', 'new-timeframe', 'map',
+    ],
+    boolean: ['help', 'version'],
+  });
+  const unknown = Object.keys(flags).filter(k => k !== '_' && !KNOWN_FLAGS.has(k));
+  if (unknown.length > 0) {
+    throw new Error(`unknown option: ${unknown[0].startsWith('-') ? '' : '--'}${unknown[0]}`);
+  }
+  if (flags._.length > 0) {
+    throw new Error(`unexpected argument: ${flags._[0]}`);
+  }
+  return flags;
+}
+
 /**
  * Run the OHLCV resampling CLI. Streams and TTY flag are injectable for
  * testing.
@@ -471,22 +529,33 @@ export async function runCli(
   stdout: NodeJS.WritableStream = process.stdout,
   stderr: NodeJS.WritableStream = process.stderr,
 ): Promise<void> {
-  const program = commanderProgram.createCommand();
-  program
-    .description('Resample OHLCV between timeframes and file formats')
-    .option('-i, --input <path>', 'Input file path (csv, json, jsonl) or use pipe')
-    .option('-o, --output <path>', 'Output file path (csv, json, jsonl) or use stdout')
-    .option('-f, --format <fmt>', 'Output format (csv, json, jsonl)', 'json')
-    .option('--input-format <fmt>', 'Input format when piping (csv, json, jsonl, auto)', 'auto')
-    .option('-s, --shape <shape>', 'Output shape for JSON (object, array, auto)', 'auto')
-    .option('-b, --base-timeframe <number>', 'Base timeframe in seconds', '60')
-    .option('-n, --new-timeframe <number>', 'New timeframe in seconds', '300')
-    .option('--map <mapping>', 'Map record fields to canonical keys (e.g. time=timestamp,close=cl,volume=vol)')
-    .version(PACKAGE_VERSION);
-
-  program.parse(argv);
-  program.showHelpAfterError();
-  const options = program.opts();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let options: any;
+  try {
+    const flags = parseArgs(argv);
+    if (flags.help) {
+      stdout.write(HELP);
+      return;
+    }
+    if (flags.version) {
+      stdout.write(PACKAGE_VERSION + '\n');
+      return;
+    }
+    options = {
+      input: flags.input,
+      output: flags.output,
+      format: flags.format,
+      inputFormat: flags['input-format'],
+      shape: flags.shape,
+      baseTimeframe: flags['base-timeframe'],
+      newTimeframe: flags['new-timeframe'],
+      map: flags.map,
+    };
+  } catch (error: unknown) {
+    stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
+    process.exitCode = 1;
+    return;
+  }
 
   async function readJsonFileData(filePath: string, map?: OhlcvMap): Promise<ParsedInput> {
     let raw: string;
