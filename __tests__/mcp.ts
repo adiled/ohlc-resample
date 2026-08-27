@@ -45,13 +45,17 @@ describe('MCP server (stdio JSON-RPC, CLI-delegated)', () => {
     expect(res.capabilities.tools).toBeTruthy();
   });
 
-  test('tools/list exposes the resample_ohlcv_file tool with a schema', async () => {
+  test('tools/list exposes the resample and audit tools with schemas', async () => {
     const res = await dispatch({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) as any;
-    expect(res.tools).toHaveLength(1);
-    const tool = res.tools[0];
-    expect(tool.name).toBe('resample_ohlcv_file');
-    expect(tool.inputSchema.required).toContain('input_path');
-    expect(tool.inputSchema.properties.new_timeframe.default).toBe(300);
+    expect(res.tools).toHaveLength(2);
+    const names = res.tools.map((t: { name: string }) => t.name).sort();
+    expect(names).toEqual(['audit_ohlcv_file', 'resample_ohlcv_file']);
+    const resample = res.tools.find((t: { name: string }) => t.name === 'resample_ohlcv_file');
+    expect(resample.inputSchema.required).toContain('input_path');
+    expect(resample.inputSchema.properties.new_timeframe.default).toBe(300);
+    const audit = res.tools.find((t: { name: string }) => t.name === 'audit_ohlcv_file');
+    expect(audit.inputSchema.required).toContain('input_path');
+    expect(audit.inputSchema.properties.map).toBeTruthy();
   });
 
   test('resamples a JSON file and returns candles as text', async () => {

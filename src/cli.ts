@@ -6,7 +6,7 @@ import * as readline from 'readline';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'node:url';
 import mri from 'mri';import { IOHLCV, OHLCV } from './types.js';
-import { resampleOhlcv, resampleOhlcvAsync } from './lib.js';
+import { resampleOhlcv, resampleOhlcvAsync, auditOhlcv } from './lib.js';
 import { mapToOhlcv } from './map.js';
 import type { OhlcvFieldMap, OhlcvMap } from './map.js';
 
@@ -222,6 +222,7 @@ function prefixError(err: unknown): Error {
 interface ParsedInput {
   data: IOHLCV[] | OHLCV[];
   shape: Shape;
+  format?: InputFormat;
 }
 
 function parseInput(raw: string, format: InputFormat, map?: OhlcvMap): ParsedInput {
@@ -269,6 +270,7 @@ async function* csvCandleReader(
   lines: AsyncGenerator<string>,
   onSkipped: () => void,
   map?: OhlcvMap,
+  meta?: { headers?: string[] },
 ): AsyncGenerator<IOHLCV> {
   let headers = REQUIRED_FIELDS as readonly string[];
   let headerSeen = false;
@@ -286,6 +288,7 @@ async function* csvCandleReader(
         headers = first as readonly string[];
       }
       started = true;
+      if (meta) meta.headers = headers as string[];
       if (headerSeen) continue;
     }
     const candle = parseCSVLine(trimmed, headers, map);
@@ -303,12 +306,22 @@ async function* jsonlCandleReader(
   lines: AsyncGenerator<string>,
   onSkipped: () => void,
   map?: OhlcvMap,
+  meta?: { shape?: Shape; schema?: string[] },
 ): AsyncGenerator<OHLCV | IOHLCV> {
   for await (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const candle = parseJSONLLine(trimmed, map);
     if (candle === null) { onSkipped(); continue; }
+    if (meta && meta.shape === undefined) {
+      if (Array.isArray(candle)) {
+        meta.shape = 'array';
+        meta.schema = [...REQUIRED_FIELDS];
+      } else {
+        meta.shape = 'object';
+        meta.schema = Object.keys(candle);
+      }
+    }
     yield candle;
   }
 }
@@ -435,6 +448,149 @@ async function writeResampledStream(
   }
 }
 
+interface AuditMeta {
+  headers?: string[];
+  shape?: Shape;
+  schema?: string[];
+}
+
+/** Wrap a buffered array as an async iterable for `auditOhlcv`. */
+async function* asyncIterableFromArray(data: OHLCV[] | IOHLCV[]): AsyncGenerator<OHLCV | IOHLCV> {
+  for (const c of data) yield c;
+}
+
+/**
+ * Read all of stdin into a parsed OHLCV array. Detects the format unless
+ * `inputFormat` is explicit. Exposes the detected format for audit reports.
+ */
+async function readPipeData(
+  stream: NodeJS.ReadableStream,
+  inputFormat: InputFormatOption,
+  map: OhlcvMap | undefined,
+  stderr: NodeJS.WritableStream,
+): Promise<ParsedInput> {
+  const raw = await new Promise<string>((resolve, reject) => {
+    let buf = '';
+    stream.on('data', chunk => { buf += chunk; });
+    stream.on('end', () => resolve(buf));
+    stream.on('error', err => reject(prefixError(err)));
+  });
+  const format: InputFormat = inputFormat === 'auto' ? detectFormat(raw) : inputFormat;
+  const parsed = parseInput(raw, format, map);
+  if (format === 'csv') {
+    const { skipped } = parseCSV(raw, map);
+    if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed CSV row(s)\n`);
+  }
+  return { data: parsed.data, shape: parsed.shape, format };
+}
+
+/** Read a JSON array file into parsed OHLCV. */
+async function readJsonFileData(filePath: string, map?: OhlcvMap): Promise<ParsedInput> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(path.resolve(filePath), 'utf8');
+  } catch (err) {
+    throw prefixError(err);
+  }
+  return parseInput(raw, 'json', map);
+}
+
+/**
+ * Audit path (`--audit`): inspect the input instead of resampling it. Reuses
+ * the same streaming readers as the resample path, so large CSV/JSONL/Parquet
+ * files are audited in bounded memory. Prints a JSON trust report.
+ */
+async function runAudit(
+  input: string | undefined,
+  stdin: NodeJS.ReadableStream,
+  options: { inputFormat: InputFormatOption; map?: OhlcvMap },
+  stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
+): Promise<void> {
+  const { map } = options;
+  let format: InputFormat | 'parquet' = 'json';
+  let shape: Shape = 'object';
+  let schema: string[] = [...REQUIRED_FIELDS];
+  let skipped = 0;
+
+  // The readers below (CSV/JSONL/JSON/pipe) already apply `map` before
+  // yielding, so auditOhlcv must NOT re-map or canonical objects would be
+  // double-mapped (e.g. row['timestamp'] -> undefined -> NaN time). Only the
+  // Parquet string-path branch hands the raw path to auditOhlcv, which applies
+  // the map itself. `useMap` flags that branch.
+  //
+  // CSV/JSONL shape+schema are discovered by the reader on its first record,
+  // so `meta` is captured after the stream is consumed but before reporting.
+  const finish = async (
+    iter: AsyncIterable<OHLCV | IOHLCV> | string,
+    useMap = false,
+    meta?: AuditMeta,
+  ) => {
+    const report = await auditOhlcv(iter, useMap ? { map } : {});
+    if (meta) {
+      if (meta.shape) shape = meta.shape;
+      schema = meta.headers ?? meta.schema ?? [...REQUIRED_FIELDS];
+    }
+    const out = { format, shape, schema, skipped, ...report };
+    await writeChunk(stdout, JSON.stringify(out, null, 2));
+  };
+
+  if (input) {
+    const ext = path.extname(input).slice(1).toLowerCase();
+    if (!['csv', 'json', 'jsonl', 'ndjson', 'parquet'].includes(ext)) {
+      throw new Error('Only CSV, JSON, and Parquet files are accepted as input');
+    }
+    const source = fs.createReadStream(path.resolve(input), { encoding: 'utf8' });
+    const lines = lineReader(source);
+
+    if (ext === 'csv') {
+      format = 'csv';
+      const meta: AuditMeta = {};
+      await finish(csvCandleReader(lines, () => skipped++, map, meta), false, meta);
+      return;
+    }
+    if (ext === 'jsonl' || ext === 'ndjson') {
+      format = 'jsonl';
+      const meta: AuditMeta = {};
+      await finish(jsonlCandleReader(lines, () => skipped++, map, meta), false, meta);
+      return;
+    }
+    if (ext === 'parquet') {
+      format = 'parquet';
+      shape = 'object';
+      schema = [...REQUIRED_FIELDS];
+      await finish(input, true);
+      return;
+    }
+    // json array (buffered)
+    format = 'json';
+    const parsed = await readJsonFileData(input, map);
+    shape = parsed.shape;
+    schema =
+      parsed.shape === 'object' && parsed.data.length > 0
+        ? Object.keys(parsed.data[0])
+        : ([...REQUIRED_FIELDS]);
+    await finish(asyncIterableFromArray(parsed.data));
+    return;
+  }
+
+  // Pipe input.
+  if (options.inputFormat === 'jsonl') {
+    format = 'jsonl';
+    const meta: AuditMeta = {};
+    await finish(jsonlCandleReader(lineReader(stdin), () => skipped++, map, meta), false, meta);
+    return;
+  }
+  const parsed = await readPipeData(stdin, options.inputFormat, map, stderr);
+  format = parsed.format ?? 'json';
+  shape = parsed.shape;
+  schema =
+    parsed.shape === 'object' && parsed.data.length > 0
+      ? Object.keys(parsed.data[0])
+      : ([...REQUIRED_FIELDS]);
+  await finish(asyncIterableFromArray(parsed.data));
+}
+
 /**
  * Parse the `--map` flag (Record form only; a mapping function can't be a CLI
  * arg) into an `OhlcvFieldMap`. Format: `field=sourceKey` entries separated by
@@ -467,7 +623,7 @@ function parseMapFlag(value: string | undefined): OhlcvMap | undefined {
 const KNOWN_FLAGS = new Set([
   'input', 'i', 'output', 'o', 'format', 'f', 'input-format',
   'shape', 's', 'base-timeframe', 'b', 'new-timeframe', 'n',
-  'map', 'help', 'h', 'version', 'V',
+  'map', 'audit', 'help', 'h', 'version', 'V',
 ]);
 
 const HELP = `Usage: ohlc-resample [options]
@@ -484,6 +640,7 @@ Options:
   -b, --base-timeframe <number> Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number> New timeframe in seconds (default: "300")
       --map <mapping>          Map record fields to canonical keys (e.g. time=timestamp,close=cl,volume=vol)
+      --audit                  audit the input instead of resampling (print a trust report)
   -h, --help                   display help for command\n`;
 
 // Tiny arg parser (mri). Unlike commander, mri is silent about unknown
@@ -511,7 +668,7 @@ function parseArgs(argv: string[]) {
       'input', 'output', 'format', 'input-format', 'shape',
       'base-timeframe', 'new-timeframe', 'map',
     ],
-    boolean: ['help', 'version'],
+    boolean: ['help', 'version', 'audit'],
   });
   const unknown = Object.keys(flags).filter(k => k !== '_' && !KNOWN_FLAGS.has(k));
   if (unknown.length > 0) {
@@ -554,38 +711,12 @@ export async function runCli(
       baseTimeframe: flags['base-timeframe'],
       newTimeframe: flags['new-timeframe'],
       map: flags.map,
+      audit: flags.audit,
     };
   } catch (error: unknown) {
     stderr.write((error instanceof Error ? error.message : String(error)) + '\n');
     process.exitCode = 1;
     return;
-  }
-
-  async function readJsonFileData(filePath: string, map?: OhlcvMap): Promise<ParsedInput> {
-    let raw: string;
-    try {
-      raw = await fs.promises.readFile(path.resolve(filePath), 'utf8');
-    } catch (err) {
-      throw prefixError(err);
-    }
-    return parseInput(raw, 'json', map);
-  }
-
-  async function readPipeData(stream: NodeJS.ReadableStream, map?: OhlcvMap): Promise<ParsedInput> {
-    const raw = await new Promise<string>((resolve, reject) => {
-      let buf = '';
-      stream.on('data', chunk => { buf += chunk; });
-      stream.on('end', () => resolve(buf));
-      stream.on('error', err => reject(prefixError(err)));
-    });
-    const requested = options.inputFormat as InputFormatOption;
-    const format: InputFormat = requested === 'auto' ? detectFormat(raw) : requested;
-    const parsed = parseInput(raw, format, map);
-    if (format === 'csv') {
-      const { skipped } = parseCSV(raw, map);
-      if (skipped > 0) stderr.write(`Warning: skipped ${skipped} malformed CSV row(s)\n`);
-    }
-    return parsed;
   }
 
   async function writeOutput(
@@ -607,6 +738,16 @@ export async function runCli(
   }
 
   try {
+    if (options.audit) {
+      await runAudit(
+        options.input as string | undefined,
+        stdin,
+        { inputFormat: options.inputFormat as InputFormatOption, map: parseMapFlag(options.map as string | undefined) },
+        stdout,
+        stderr,
+      );
+      return;
+    }
     const baseTimeframe = parseInt(options.baseTimeframe, 10);
     const newTimeframe = parseInt(options.newTimeframe, 10);
     if (isNaN(baseTimeframe) || isNaN(newTimeframe)) {
@@ -697,7 +838,7 @@ export async function runCli(
       return;
     }
 
-    const parsed = await readPipeData(stdin, map);
+    const parsed = await readPipeData(stdin, options.inputFormat as InputFormatOption, map, stderr);
     const outputShape: Shape = options.shape === 'auto' ? parsed.shape : options.shape;
     const resampled = resampleOhlcv(parsed.data as IOHLCV[], { baseTimeframe, newTimeframe });
     await writeOutput(resampled, outputFormat, outputShape, options.output);

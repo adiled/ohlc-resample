@@ -94,6 +94,33 @@ const TOOLS = [
       required: ['input_path'],
     },
   },
+  {
+    name: 'audit_ohlcv_file',
+    description:
+      'Audit a local OHLCV file and report whether its data is trustworthy, and ' +
+      'exactly why. Accepts CSV, JSON, JSONL, NDJSON, or Parquet input. Reports ' +
+      'record count, time range, source timeframe, ordering (out-of-order count ' +
+      'and max lateness), duplicate timestamps, OHLC integrity violations, bad ' +
+      'values (NaN/Infinity/negative prices/volume), and missing bars. Use this ' +
+      'before resampling to check the source is sane, and to learn the base ' +
+      'timeframe to pass to resample_ohlcv_file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        input_path: {
+          type: 'string',
+          description: 'Input file path (csv, json, jsonl, ndjson, parquet).',
+        },
+        map: {
+          type: 'string',
+          description:
+            'Map record fields to canonical keys: field=sourceKey entries separated by commas, ' +
+            "e.g. 'time=timestamp,volume=amount'.",
+        },
+      },
+      required: ['input_path'],
+    },
+  },
 ] as const;
 
 class RpcError extends Error {
@@ -114,7 +141,7 @@ async function callTool(params: any): Promise<unknown> {
   const name = params?.name;
   const args = params?.arguments ?? {};
 
-  if (name !== 'resample_ohlcv_file') {
+  if (name !== 'resample_ohlcv_file' && name !== 'audit_ohlcv_file') {
     throw new RpcError(-32602, `Unknown tool: ${name}`);
   }
   const inputPath = args.input_path;
@@ -123,17 +150,27 @@ async function callTool(params: any): Promise<unknown> {
   }
 
   // Build the exact argv the `ohlc` CLI would receive, then run it in-process.
-  const argv = [
-    process.argv[0] ?? 'node',
-    process.argv[1] ?? 'mcp',
-    '-i', String(inputPath),
-    '-b', String(args.base_timeframe ?? 60),
-    '-n', String(args.new_timeframe ?? 300),
-    '-f', String(args.format ?? 'json'),
-    '-s', String(args.shape ?? 'auto'),
-  ];
+  const argv =
+    name === 'audit_ohlcv_file'
+      ? [
+          process.argv[0] ?? 'node',
+          process.argv[1] ?? 'mcp',
+          '-i', String(inputPath),
+          '--audit',
+        ]
+      : [
+          process.argv[0] ?? 'node',
+          process.argv[1] ?? 'mcp',
+          '-i', String(inputPath),
+          '-b', String(args.base_timeframe ?? 60),
+          '-n', String(args.new_timeframe ?? 300),
+          '-f', String(args.format ?? 'json'),
+          '-s', String(args.shape ?? 'auto'),
+        ];
   if (args.map !== undefined) argv.push('--map', String(args.map));
-  if (args.output_path !== undefined) argv.push('-o', String(args.output_path));
+  if (args.output_path !== undefined && name !== 'audit_ohlcv_file') {
+    argv.push('-o', String(args.output_path));
+  }
 
   const stdout = new CaptureStream();
   const stderr = new CaptureStream();

@@ -18,11 +18,24 @@ streaming CSV→CSV output bug.
   over stdio, so the server hand-rolls the tiny protocol (initialize,
   `tools/list`, `tools/call`, `ping`) directly. Runtime deps stay just `mri`
   and `hyparquet`.
-- Single tool `resample_ohlcv_file`: takes an `input_path`
+- Two tools: `resample_ohlcv_file` (takes an `input_path`
   (csv/json/jsonl/ndjson/parquet), `base_timeframe`, `new_timeframe`,
   `format`, `shape`, optional `map` (e.g. CCXT `timestamp`/`amount`), and
-  optional `output_path`. File-path-based, so the LLM pays tokens for intent,
-  not payload.
+  optional `output_path`) and `audit_ohlcv_file` (takes an `input_path` and
+  optional `map`, returns a trust report). Both are file-path-based, so the
+  LLM pays tokens for intent, not payload.
+
+**New `audit` capability**
+
+- New library function `auditOhlcv` + `AuditReport`: validates and describes
+  market-data input in one streaming pass, answering "can I trust the output
+  of this resampling, and exactly why?". Reports record count, time range,
+  source timeframe (modal positive interval), ordering (sorted, out-of-order
+  count, max lateness), duplicate timestamps, OHLC integrity violations, bad
+  values (NaN/Infinity/negative prices/volume), and missing bars.
+- Wired to the CLI as `--audit` (prints a JSON report instead of resampling)
+  and exposed to MCP as `audit_ohlcv_file`, which inherits the CLI path with
+  zero extra logic.
 
 **Bug fix**
 
