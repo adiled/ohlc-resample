@@ -65,7 +65,7 @@ describe('withTimeout utility', () => {
 
     await withTimeout(
       async () => {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 900));
         return 'success';
       },
       1000,
