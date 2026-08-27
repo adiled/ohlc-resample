@@ -65,6 +65,9 @@ Requires Node.js 26 or newer.
 ## Quick start (CLI)
 
 ```bash
+# Install
+curl -fsSL https://github.com/adiled/ohlc-resample/raw/main/install.sh | sh
+
 # Resample 1-minute candles in data.csv into 5-minute candles
 ohlc -i data.csv -b 60 -n 300
 
@@ -73,6 +76,12 @@ ohlc -i data.parquet -f json -o candles.json
 
 # Pipe in JSON, get JSON out
 cat data.json | ohlc
+```
+
+**OR use directly** with npx, no install needed:
+
+```bash
+npx ohlc-resample -i data.csv -b 60 -n 300
 ```
 
 See the [CLI section](#cli) below for all options.
