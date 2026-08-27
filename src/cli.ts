@@ -332,9 +332,13 @@ class IncrementalWriter {
   }
 
   async writeCandle(candle: OHLCV | IOHLCV): Promise<void> {
-    const shaped = this.shape === 'array'
+    // CSV rows are always the 6-tuple shape regardless of the requested JSON
+    // shape, so force array shape for CSV output.
+    const shaped = this.format === 'csv'
       ? toArrayShape([candle] as OHLCV[])[0]
-      : toObjectShape([candle] as IOHLCV[])[0];
+      : this.shape === 'array'
+        ? toArrayShape([candle] as OHLCV[])[0]
+        : toObjectShape([candle] as IOHLCV[])[0];
     let text: string;
     if (this.format === 'csv') {
       text = (shaped as OHLCV).join(',') + '\n';
