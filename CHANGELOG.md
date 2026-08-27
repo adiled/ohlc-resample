@@ -1,5 +1,14 @@
 # ohlc-resample
 
+## 2.1.1
+
+### Patch Changes
+
+- [#21](https://github.com/adiled/ohlc-resample/pull/21) [`ce44243`](https://github.com/adiled/ohlc-resample/commit/ce442430f231eb30ed7d185afb6afb83e5742d73) Thanks [@adiled](https://github.com/adiled)! - Rewrite the README as end-user documentation: drop internal implementation
+  narration (module-format internals, dependency and roadmap notes) and present
+  the tool in plain language for financial-data users. Also removes em dashes
+  for easier machine parsing.
+
 ## 2.1.0
 
 ### Minor Changes
