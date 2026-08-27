@@ -396,8 +396,7 @@ read and the time frame you want, and it does the rest:
 - CSV, JSON, JSONL, or Parquet in; JSON, CSV, or JSONL out
 
 Pass an output file and it writes there, or let it return the data directly.
-No need to paste anything into the chat. You pay for the ask, not the
-payload.
+No need to paste anything into the chat.
 
 Example: resample 1-minute bars to 5-minute and save them.
 
