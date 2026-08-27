@@ -359,15 +359,22 @@ cat data.json | ohlc
 cat data.csv | ohlc --input-format csv
 ```
 
-## MCP server (AI agents)
+## Transform and stream market data, straight from your AI
 
-`ohlc-resample` ships a bundled, **zero-dependency MCP server** (the
-`ohlc-resample-mcp` binary), so AI agents (Claude, etc.) can resample candles
-by intent. It is a thin adapter over the CLI itself: each tool call runs the
-`ohlc` engine in-process and inherits every CLI feature (formats, streaming,
-Parquet, `--map`) with zero extra maintenance.
+Tell your AI assistant to reshape your market data and it just does it. Point
+it at your feed, name the time frame you want, and it hands back clean output
+at any scale. It already speaks the street: CCXT-style feeds, tick data,
+Parquet exports, gaps in the series, files too big for memory. You ask, it
+delivers.
 
-Install the package and point your MCP client at the binary:
+Set it up in one shot, then it works with whichever assistant you use:
+
+```bash
+npm i -g ohlc-resample
+```
+
+That installs both the `ohlc` command and the MCP server. Most assistants
+auto-detect it; for the ones that need a nudge, add a server entry:
 
 ```json
 {
@@ -380,22 +387,21 @@ Install the package and point your MCP client at the binary:
 }
 ```
 
-It exposes one tool, **`resample_ohlcv_file`**, which is **file-path-based**:
-the LLM pays tokens for intent, not data.
+Your assistant gets one tool, **`resample_ohlcv_file`**. Give it the file to
+read and the time frame you want, and it does the rest:
 
-- `input_path` (required): csv, json, jsonl, ndjson, or parquet file.
-- `base_timeframe` (default `60`), `new_timeframe` (default `300`, integer
-  multiple of base).
-- `format` (`json`/`csv`/`jsonl`, default `json`), `shape` (`auto`/`object`/
-  `array`, default `auto`), `map` (e.g. `time=timestamp,volume=amount`).
-- `output_path`: optional output file; if omitted, the resampled output is
-  returned as text.
+- 1-minute bars into 5-minute (or any coarser frame)
+- raw trades or ticks into clean OHLCV
+- CCXT `timestamp` / `amount` data without renaming a thing
+- CSV, JSON, JSONL, or Parquet in; JSON, CSV, or JSONL out
 
-Example call: `resample_ohlcv_file(input_path: "data.csv", base_timeframe: 60,
-new_timeframe: 300, format: "json", output_path: "out.json")`.
+Pass an output file and it writes there, or let it return the data directly.
+No need to paste anything into the chat. You pay for the ask, not the
+payload.
 
-The protocol is plain JSON-RPC 2.0 over stdio (initialize, `tools/list`,
-`tools/call`) with no `@modelcontextprotocol/sdk` dependency.
+Example: resample 1-minute bars to 5-minute and save them.
+
+`resample_ohlcv_file(input_path: "data.csv", base_timeframe: 60, new_timeframe: 300, output_path: "out.json")`
 
 ## Contributors
 
