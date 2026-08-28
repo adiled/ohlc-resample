@@ -1,6 +1,6 @@
 <h1 align="center">ohlc-resample 🕯️</h1>
 <p align="center">
-Turn trade, tick, or OHLCV data into clean candlestick charts on any time frame
+Transform, resample, and stream market data at any scale
 </p>
 <p align="center">
   <a href="https://www.npmjs.com/package/ohlc-resample" target="_blank">
@@ -298,6 +298,7 @@ Options:
   -b, --base-timeframe <number>  Base timeframe in seconds (default: "60")
   -n, --new-timeframe <number>   New timeframe in seconds (default: "300")
       --map <mapping>            Feed data as-is; map fields to canonical keys (e.g. time=timestamp,volume=amount)
+      --audit                    Audit the input instead of resampling (print a JSON trust report)
   -h, --help                     Display help for command
 ```
 
@@ -358,6 +359,61 @@ file-only via `-i`).
 cat data.json | ohlc
 cat data.csv | ohlc --input-format csv
 ```
+
+## Transform and stream market data, straight from your AI
+
+Tell your AI assistant to reshape your market data and it just does it. Point
+it at your feed, name the time frame you want, and it hands back clean output
+at any scale. It already speaks the street: CCXT-style feeds, tick data,
+Parquet exports, gaps in the series, files too big for memory. You ask, it
+delivers.
+
+Set it up in one shot, then it works with whichever assistant you use:
+
+```bash
+npm i -g ohlc-resample
+```
+
+That installs both the `ohlc` command and the MCP server. Most assistants
+auto-detect it; for the ones that need a nudge, add a server entry:
+
+```json
+{
+  "mcpServers": {
+    "ohlc-resample": {
+      "command": "ohlc-resample-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Your assistant gets two tools.
+
+**`resample_ohlcv_file`** reshapes your data. Give it the file to read and
+the time frame you want, and it does the rest:
+
+- 1-minute bars into 5-minute (or any coarser frame)
+- raw trades or ticks into clean OHLCV
+- CCXT `timestamp` / `amount` data without renaming a thing
+- CSV, JSON, JSONL, or Parquet in; JSON, CSV, or JSONL out
+
+Pass an output file and it writes there, or let it return the data directly.
+No need to paste anything into the chat.
+
+Example: resample 1-minute bars to 5-minute and save them.
+
+`resample_ohlcv_file(input_path: "data.csv", base_timeframe: 60, new_timeframe: 300, output_path: "out.json")`
+
+**`audit_ohlcv_file`** tells you whether you can trust the source before you
+resample it, and exactly why. Point it at the same file and it reports the
+record count, the time span, the source time frame, any out-of-order or
+duplicate bars, bars whose high/low/open/close don't add up, NaN or negative
+values, and bars that are simply missing.
+
+Example: check a feed before committing to a resample.
+
+`audit_ohlcv_file(input_path: "data.csv")`
 
 ## Contributors
 

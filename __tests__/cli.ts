@@ -333,6 +333,20 @@ describe('CLI', () => {
       }, 1000, 'stream CSV to JSONL');
     });
 
+    test('streams CSV file -> CSV output (object shape to CSV rows)', async () => {
+      await withTimeout(async () => {
+        const out = captureWritable();
+        const err = captureWritable();
+        await runCli(['node', 'cli.js', '-i', csvPath, '-f', 'csv'], undefined, out.writable, err.writable);
+        const lines = out.getData().trim().split('\n');
+        expect(lines[0]).toBe('time,open,high,low,close,volume');
+        expect(lines[1]).toBe(
+          `${expectedCandle.time},${expectedCandle.open},${expectedCandle.high},${expectedCandle.low},${expectedCandle.close},${expectedCandle.volume}`
+        );
+        expect(process.exitCode).toBe(0);
+      }, 1000, 'stream CSV to CSV');
+    });
+
     test('streams JSONL file input', async () => {
       await withTimeout(async () => {
         const jsonlPath = path.join(tempDir, 'test.jsonl');

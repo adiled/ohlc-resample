@@ -281,6 +281,180 @@ export async function* resampleOhlcvAsync(
 }
 
 /**
+ * Result of auditing an OHLCV input: structural checks that tell you whether
+ * the source is safe to resample, and exactly why (or why not).
+ */
+export interface AuditReport {
+  /** Total number of valid OHLCV records inspected. */
+  records: number;
+  /** Min/max timestamps and the span they cover (epoch ms + ISO strings). */
+  timeRange: {
+    startMs: number;
+    endMs: number;
+    spanMs: number;
+    start: string;
+    end: string;
+  };
+  /** Detected source timeframe in seconds (modal interval), or `null` when unknown. */
+  baseTimeframe: number | null;
+  ordering: {
+    /** True when every record arrived in ascending timestamp order. */
+    sorted: boolean;
+    /** Count of records whose timestamp is behind the max seen so far. */
+    outOfOrder: number;
+    /** Largest distance (ms) a late record lagged behind the max seen. */
+    maxLatenessMs: number;
+  };
+  duplicates: {
+    /** Count of records whose timestamp duplicates an earlier one. */
+    duplicateTimestamps: number;
+  };
+  ohlc: {
+    /** Count of bars that violate OHLC invariants (high<low, high<max(open,close), low>min(open,close)). */
+    invalidBars: number;
+  };
+  values: {
+    nan: number;
+    infinity: number;
+    negativePrices: number;
+    negativeVolume: number;
+  };
+  gaps: {
+    /** Expected bars across the span at the base timeframe. */
+    expectedBars: number;
+    /** Distinct timestamps observed. */
+    observed: number;
+    /** Missing bars = expected - observed (floor 0). */
+    missing: number;
+  };
+}
+
+/**
+ * Audit OHLCV input in a single streaming pass and return an `AuditReport`.
+ * Memory is O(distinct timestamps) because duplicate/gap detection needs to
+ * remember which bucket timestamps have been seen; everything else is O(1).
+ *
+ * @param source AsyncIterable of OHLCV tuples/IOHLCV objects, or a string
+ *   Parquet file path (streamed row-group by row-group).
+ * @param options.baseTimeframe Optional known source timeframe in seconds;
+ *   when omitted it is detected as the modal interval between records.
+ * @param options.map Optional per-record map (Record or function form).
+ * @throws on empty input.
+ */
+export async function auditOhlcv(
+  source: AsyncIterable<OHLCV | IOHLCV> | string,
+  options: { baseTimeframe?: number; map?: OhlcvMap } = {}
+): Promise<AuditReport> {
+  const { baseTimeframe, map } = options;
+  const input: AsyncIterable<OHLCV | IOHLCV> =
+    typeof source === 'string'
+      ? parquetOhlcvRowsAsync(source, map)
+      : (map ? mapOhlcvIterable(source, map) : source);
+
+  const it = input[Symbol.asyncIterator]();
+  const first = await it.next();
+  if (first.done) {
+    throw new Error('input OHLCV data has no candles');
+  }
+
+  const toTuple = (c: OHLCV | IOHLCV): OHLCV =>
+    Array.isArray(c)
+      ? [Number(c[0]), Number(c[1]), Number(c[2]), Number(c[3]), Number(c[4]), Number(c[5])]
+      : [Number(c.time), Number(c.open), Number(c.high), Number(c.low), Number(c.close), Number(c.volume)];
+
+  const firstTuple = toTuple(first.value);
+  let records = 1;
+  let minTime = firstTuple[OHLCVField.TIME];
+  let maxTime = firstTuple[OHLCVField.TIME];
+  let maxTimeSeen = firstTuple[OHLCVField.TIME];
+  let outOfOrder = 0;
+  let maxLatenessMs = 0;
+  const seen = new Set<number>([firstTuple[OHLCVField.TIME]]);
+  let duplicateTimestamps = 0;
+  let invalidBars = 0;
+  let nan = 0;
+  let infinity = 0;
+  let negativePrices = 0;
+  let negativeVolume = 0;
+  const deltaHist: Record<string, number> = {};
+  let prev = firstTuple[OHLCVField.TIME];
+
+  for (let r = await it.next(); !r.done; r = await it.next()) {
+    const [time, open, high, low, close, volume] = toTuple(r.value);
+    records++;
+
+    if (time < minTime) minTime = time;
+    if (time > maxTime) maxTime = time;
+
+    if (time < maxTimeSeen) {
+      outOfOrder++;
+      const lateness = maxTimeSeen - time;
+      if (lateness > maxLatenessMs) maxLatenessMs = lateness;
+    }
+    maxTimeSeen = Math.max(maxTimeSeen, time);
+
+    if (seen.has(time)) {
+      duplicateTimestamps++;
+    } else {
+      seen.add(time);
+    }
+
+    if (time > prev) {
+      const sec = Math.round((time - prev) / 1000);
+      deltaHist[sec] = (deltaHist[sec] || 0) + 1;
+    }
+    prev = time;
+
+    if (high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
+      invalidBars++;
+    }
+
+    if ([time, open, high, low, close, volume].some(Number.isNaN)) nan++;
+    if ([time, open, high, low, close, volume].some(f => f === Infinity || f === -Infinity)) infinity++;
+    if (open < 0 || high < 0 || low < 0 || close < 0) negativePrices++;
+    if (volume < 0) negativeVolume++;
+  }
+
+  // Source timeframe: honor the option, else take the modal positive interval.
+  // Intervals that round to <=0 seconds (sub-second data) are treated as unknown.
+  let detected: number | null = baseTimeframe ?? null;
+  if (detected === null) {
+    let best = 0;
+    let bestCount = -1;
+    for (const [sec, count] of Object.entries(deltaHist)) {
+      if (count > bestCount || (count === bestCount && Number(sec) < best)) {
+        best = Number(sec);
+        bestCount = count;
+      }
+    }
+    detected = bestCount > 0 && best > 0 ? best : null;
+  }
+
+  const spanMs = maxTime - minTime;
+  const expectedBars =
+    detected !== null && spanMs > 0 ? Math.floor(spanMs / (detected * 1000)) + 1 : 0;
+  const observed = seen.size;
+  const missing = Math.max(0, expectedBars - observed);
+
+  return {
+    records,
+    timeRange: {
+      startMs: minTime,
+      endMs: maxTime,
+      spanMs,
+      start: new Date(minTime).toISOString(),
+      end: new Date(maxTime).toISOString(),
+    },
+    baseTimeframe: detected,
+    ordering: { sorted: outOfOrder === 0, outOfOrder, maxLatenessMs },
+    duplicates: { duplicateTimestamps },
+    ohlc: { invalidBars },
+    values: { nan, infinity, negativePrices, negativeVolume },
+    gaps: { expectedBars, observed, missing },
+  };
+}
+
+/**
  * Aggregate group of ticks to one OHLCV object
  * @param time
  * @param ticks
